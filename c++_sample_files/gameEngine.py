@@ -815,7 +815,7 @@ def run_gui(mode:str, circle_strategy:str, square_strategy:str, load_file:Option
                     turn_start = time.time()
             draw_board(screen, board, rows, cols, score_cols, selected, highlights, msg, timers, current)
             turn += 1
-            if turn > 1000:
+            if turn > 1e9:
                 print("Turn limit reached -> draw"); break
             continue
 
@@ -992,8 +992,9 @@ def run_gui(mode:str, circle_strategy:str, square_strategy:str, load_file:Option
                                 msg=f"Selected {selected}"
                             else:
                                 msg="Invalid click"
-        turn += 1
-        if turn > 1000:
+        
+        # turn += 1
+        if turn > 1e9:
             print("Turn limit reached -> draw"); break
 
         # --- DRAW ---
@@ -1075,7 +1076,7 @@ def run_cli(mode:str, circle_strategy:str, square_strategy:str, load_file:Option
                 print(f"AI {current} has no moves; pass")
                 current = opponent(current)
                 turn += 1
-                if turn > 1000:
+                if turn > 1e9:
                     print("Turn limit reached -> draw"); break
                 # do not count the "press enter to continue" as clock time; skip it
                 input("\nPress Enter to continue...")  # keep for readability
@@ -1086,7 +1087,7 @@ def run_cli(mode:str, circle_strategy:str, square_strategy:str, load_file:Option
             if not ok:
                 current = opponent(current)
                 turn += 1
-                if turn > 1000:
+                if turn > 1e9:
                     print("Turn limit reached -> draw"); break
                 input("\nPress Enter to continue...")
                 continue
@@ -1137,7 +1138,7 @@ def run_cli(mode:str, circle_strategy:str, square_strategy:str, load_file:Option
         # next player's turn
         current = opponent(current)
         turn += 1
-        if turn > 1000:
+        if turn > 1e9:
             print("Turn limit reached -> draw"); break
 
         # Press Enter pause for readability — DO NOT count this time as player's clock (unchanged behavior)

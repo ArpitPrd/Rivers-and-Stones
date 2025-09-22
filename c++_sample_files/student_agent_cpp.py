@@ -103,7 +103,7 @@ def test_student_agent():
         board = default_start_board(rows, cols)
         
         agent = StudentAgent("circle")
-        move = agent.choose(board, rows, cols, score_cols,1.0,1.0)
+        move = agent.choose(board, rows, cols, score_cols,10.0,10.0)
         
         if move:
             print("Agent successfully generated a move")

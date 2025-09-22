@@ -1,4 +1,4 @@
-# Install script for directory: /home/arpit/Desktop/iitd/sem_7/COL333/projects/Rivers-and-Stones/src/c++_sample_files
+# Install script for directory: /home/arpit/Desktop/iitd/sem_7/COL333/projects/Rivers-and-Stones/c++_sample_files
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -50,5 +50,5 @@ endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
-file(WRITE "/home/arpit/Desktop/iitd/sem_7/COL333/projects/Rivers-and-Stones/src/c++_sample_files/build/${CMAKE_INSTALL_MANIFEST}"
+file(WRITE "/home/arpit/Desktop/iitd/sem_7/COL333/projects/Rivers-and-Stones/c++_sample_files/build/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")

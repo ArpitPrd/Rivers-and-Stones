@@ -57,10 +57,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/arpit/Desktop/iitd/sem_7/COL333/projects/Rivers-and-Stones/src/c++_sample_files
+CMAKE_SOURCE_DIR = /home/arpit/Desktop/iitd/sem_7/COL333/projects/Rivers-and-Stones/c++_sample_files
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/arpit/Desktop/iitd/sem_7/COL333/projects/Rivers-and-Stones/src/c++_sample_files/build
+CMAKE_BINARY_DIR = /home/arpit/Desktop/iitd/sem_7/COL333/projects/Rivers-and-Stones/c++_sample_files/build
 
 #=============================================================================
 # Targets provided globally by CMake.
@@ -87,9 +87,9 @@ rebuild_cache/fast: rebuild_cache
 
 # The main all target
 all: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/arpit/Desktop/iitd/sem_7/COL333/projects/Rivers-and-Stones/src/c++_sample_files/build/CMakeFiles /home/arpit/Desktop/iitd/sem_7/COL333/projects/Rivers-and-Stones/src/c++_sample_files/build//CMakeFiles/progress.marks
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/arpit/Desktop/iitd/sem_7/COL333/projects/Rivers-and-Stones/c++_sample_files/build/CMakeFiles /home/arpit/Desktop/iitd/sem_7/COL333/projects/Rivers-and-Stones/c++_sample_files/build//CMakeFiles/progress.marks
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/arpit/Desktop/iitd/sem_7/COL333/projects/Rivers-and-Stones/src/c++_sample_files/build/CMakeFiles 0
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/arpit/Desktop/iitd/sem_7/COL333/projects/Rivers-and-Stones/c++_sample_files/build/CMakeFiles 0
 .PHONY : all
 
 # The main clean target
