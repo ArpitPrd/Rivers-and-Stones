@@ -556,17 +556,17 @@ class RandomAgent(BaseAgent):
 
 # ==================== STUDENT AGENT IMPORT ====================
 
-try:
-    from student_agent_cpp import StudentAgent
-except ImportError:
-    print("Warning: student_agent.py not found. Creating placeholder StudentAgent.")
+# try:
+from student_agent import StudentAgent
+# except ImportError:
+#     print("Warning: student_agent.py not found. Creating placeholder StudentAgent.")
     
-    class StudentAgent(BaseAgent):
-        """Placeholder StudentAgent - implement in student_agent.py"""
+#     class StudentAgent(BaseAgent):
+#         """Placeholder StudentAgent - implement in student_agent.py"""
         
-        def choose(self, board: List[List[Any]], rows: int, cols: int, score_cols: List[int], current_player_time: float, opponent_time: float) -> Optional[Dict[str, Any]]:
-            moves = self.generate_all_moves(board, rows, cols, score_cols)
-            return random.choice(moves) if moves else None
+#         def choose(self, board: List[List[Any]], rows: int, cols: int, score_cols: List[int], current_player_time: float, opponent_time: float) -> Optional[Dict[str, Any]]:
+#             moves = self.generate_all_moves(board, rows, cols, score_cols)
+#             return random.choice(moves) if moves else None
 
 # ==================== AGENT FACTORY ====================
 
@@ -589,7 +589,7 @@ def get_agent(player: str, strategy: str) -> BaseAgent:
         return StudentAgent(player)
     elif strategy == "student_cpp":
         try:
-            import student_agent_cpp as student_agent
+            import student_agent as student_agent
             StudentAgentCpp = student_agent.StudentAgent
         except ImportError:
             StudentAgentCpp = None

@@ -1,5 +1,6 @@
 import argparse, json, copy, time
 from typing import List, Optional, Dict, Any, Tuple
+import sys
 
 # Agent factory now expects only (side, strategy)
 from agent import get_agent
@@ -275,7 +276,7 @@ def compute_valid_targets(board:List[List[Optional[Piece]]],
                 pushed_player = target.owner
                 flow = get_river_flow_destinations(board, tx, ty, sx, sy, pushed_player, rows, cols, score_cols, river_push=True)
                 for d in flow:
-                    if not is_opponent_score_cell(d[0],d[1],player,rows,cols,score_cols):
+                    if not is_opponent_score_cell(d[0],d[1],pushed_player,rows,cols,score_cols):
                         pushes.append(((tx,ty),(d[0],d[1])))
     return {'moves': moves, 'pushes': pushes}
 
@@ -285,32 +286,53 @@ def validate_and_apply_move(board:List[List[Optional[Piece]]],
                             player:str,
                             rows:int, cols:int, score_cols:List[int]) -> Tuple[bool,str]:
     if not isinstance(move, dict):
+        print("invalid")
         return False, "move must be dict"
     action = move.get("action")
     if action == "move":
         fr = move.get("from"); to = move.get("to")
-        if not fr or not to: return False, "move needs from & to"
+        if not fr or not to: 
+            print("invalid")
+            return False, "move needs from & to"
         fx,fy = int(fr[0]), int(fr[1]); tx,ty = int(to[0]), int(to[1])
-        if not in_bounds(fx,fy,rows,cols) or not in_bounds(tx,ty,rows,cols): return False, "oob"
-        if is_opponent_score_cell(tx,ty,player,rows,cols,score_cols): return False, "can't go into opponent score"
+        if not in_bounds(fx,fy,rows,cols) or not in_bounds(tx,ty,rows,cols): 
+            print("invalid")
+            return False, "oob"
+        if is_opponent_score_cell(tx,ty,player,rows,cols,score_cols): 
+            print("invalid")
+            return False, "can't go into opponent score"
         piece = board[fy][fx]
-        if piece is None or piece.owner != player: return False, "invalid piece"
+        if piece is None or piece.owner != player: 
+            print("invalid")
+            return False, "invalid piece"
         if board[ty][tx] is None:
-            board[ty][tx]=piece; board[fy][fx]=None; return True, "moved"
+            board[ty][tx]=piece; board[fy][fx]=None; 
+            return True, "moved"
         pushed = move.get("pushed_to")
-        if not pushed: return False, "destination occupied; pushed_to required"
+        if not pushed: 
+            print("invalid")
+            return False, "destination occupied; pushed_to required"
         ptx,pty = int(pushed[0]), int(pushed[1])
         dx = tx - fx; dy = ty - fy
-        if (ptx,pty) != (tx+dx, ty+dy): return False, "invalid pushed_to"
-        if not in_bounds(ptx,pty,rows,cols): return False, "oob"
-        if is_opponent_score_cell(ptx,pty,player,rows,cols,score_cols): return False, "can't push into opponent score"
-        if board[pty][ptx] is not None: return False, "pushed_to not empty"
+        if (ptx,pty) != (tx+dx, ty+dy): 
+            print("invalid")
+            return False, "invalid pushed_to"
+        if not in_bounds(ptx,pty,rows,cols): 
+            print("invalid")
+            return False, "oob"
+        if is_opponent_score_cell(ptx,pty,player,rows,cols,score_cols): 
+            print("invalid")
+            return False, "can't push into opponent score"
+        if board[pty][ptx] is not None: 
+            print("invalid")
+            return False, "pushed_to not empty"
         board[pty][ptx] = board[ty][tx]; board[ty][tx] = piece; board[fy][fx] = None
         return True, "move+push applied"
 
     elif action == "push":
         fr = move.get("from"); to = move.get("to"); pushed = move.get("pushed_to")
         if not fr or not to or not pushed:
+            print("invalid")
             return False, "push needs from,to,pushed_to"
 
         fx, fy = int(fr[0]), int(fr[1])
@@ -318,27 +340,34 @@ def validate_and_apply_move(board:List[List[Optional[Piece]]],
         px, py = int(pushed[0]), int(pushed[1])
 
         if not (in_bounds(fx,fy,rows,cols) and in_bounds(tx,ty,rows,cols) and in_bounds(px,py,rows,cols)):
+            print("invalid")
             return False, "oob"
         pushed_player = board[ty][tx].owner if board[ty][tx] else None
         if (is_opponent_score_cell(tx,ty,player,rows,cols,score_cols) or
             is_opponent_score_cell(px,py,pushed_player,rows,cols,score_cols)):
+            print("invalid")
             return False, "push would enter opponent score cell"
 
         piece = board[fy][fx]
         if piece is None or piece.owner != player:
+            print("invalid")
             return False, "invalid piece"
 
         if board[ty][tx] is None:
+            print("invalid")
             return False, "to must be occupied"
         if board[py][px] is not None:
+            print("invalid")
             return False, "pushed_to not empty"
 
         if piece.side == "river" and board[ty][tx].side == "river":
+            print("invalid")
             return False, "rivers cannot push rivers"
 
         info = compute_valid_targets(board, fx, fy, player, rows, cols, score_cols)
         valid_pairs = info['pushes']
         if ((tx,ty), (px,py)) not in valid_pairs:
+            print("invalid")
             return False, "push pair invalid"
 
         board[py][px] = board[ty][tx]  # enemy goes to pushed_to
@@ -361,14 +390,22 @@ def validate_and_apply_move(board:List[List[Optional[Piece]]],
 
     elif action == "flip":
         fr = move.get("from")
-        if not fr: return False, "flip needs from"
+        if not fr: 
+            print("invalid")
+            return False, "flip needs from"
         fx,fy = int(fr[0]), int(fr[1])
-        if not in_bounds(fx,fy,rows,cols): return False, "oob"
+        if not in_bounds(fx,fy,rows,cols): 
+            print("invalid")
+            return False, "oob"
         piece = board[fy][fx]
-        if piece is None or piece.owner != player: return False, "invalid piece"
+        if piece is None or piece.owner != player: 
+            print("invalid")
+            return False, "invalid piece"
         if piece.side == "stone":
             ori = move.get("orientation")
-            if ori not in ("horizontal","vertical"): return False, "stone->river needs orientation"
+            if ori not in ("horizontal","vertical"): 
+                print("invalid")
+                return False, "stone->river needs orientation"
             # check resulting river flow doesn't reach opponent score
             piece.side="river"; piece.orientation=ori
             flow = get_river_flow_destinations(board, fx, fy, fx, fy, player, rows, cols, score_cols)
@@ -376,6 +413,7 @@ def validate_and_apply_move(board:List[List[Optional[Piece]]],
             piece.side="stone"; piece.orientation=None
             for (dx,dy) in flow:
                 if is_opponent_score_cell(dx,dy,player,rows,cols,score_cols):
+                    print("invalid")
                     return False, "flip would allow flow into opponent score"
             # commit flip
             piece.side="river"; piece.orientation=ori
@@ -386,20 +424,30 @@ def validate_and_apply_move(board:List[List[Optional[Piece]]],
 
     elif action == "rotate":
         fr = move.get("from")
-        if not fr: return False, "rotate needs from"
+        if not fr: 
+            print("invalid")
+            return False, "rotate needs from"
         fx,fy = int(fr[0]), int(fr[1])
-        if not in_bounds(fx,fy,rows,cols): return False, "oob"
+        if not in_bounds(fx,fy,rows,cols): 
+            print("invalid")
+            return False, "oob"
         piece = board[fy][fx]
-        if piece is None or piece.owner != player: return False, "invalid"
-        if piece.side != "river": return False, "rotate only on river"
+        if piece is None or piece.owner != player: 
+            print("invalid")
+            return False, "invalid"
+        if piece.side != "river": 
+            print("invalid")
+            return False, "rotate only on river"
         piece.orientation = "horizontal" if piece.orientation=="vertical" else "vertical"
         flow = get_river_flow_destinations(board, fx, fy, fx, fy, player, rows, cols, score_cols)
         for (dx,dy) in flow:
             if is_opponent_score_cell(dx,dy,player,rows,cols,score_cols):
                 piece.orientation = "horizontal" if piece.orientation=="vertical" else "vertical"
+                print("invalid")
                 return False, "rotation allows flow into opponent score"
         return True, "rotated"
 
+    print("invalid")
     return False, "unknown action"
 
 # ---------------- Generate moves for agents (compatibility) ----------------
@@ -769,7 +817,7 @@ def run_gui(mode:str, circle_strategy:str, square_strategy:str, load_file:Option
 
     while True:
         clock.tick(FPS)
-
+        # time.sleep(0.3)
         # Check timeouts
         if not game_over:
             if timers["circle"] <= 0 and timers["square"] > 0:
@@ -792,6 +840,7 @@ def run_gui(mode:str, circle_strategy:str, square_strategy:str, load_file:Option
             ai_start = time.time()
             agent = agents[current]
             move = agent.choose(board, rows, cols, score_cols, timers[current], timers[opponent(current)])
+            print(f"AI{current}: {move}")
             ai_end = time.time()
             ai_elapsed = ai_end - ai_start
             timers[current] -= ai_elapsed
@@ -810,12 +859,14 @@ def run_gui(mode:str, circle_strategy:str, square_strategy:str, load_file:Option
                     else:
                         current = opponent(current)
                         turn_start = time.time()
+                        print(info)
+                        time.sleep(100)
                 else:
                     current = opponent(current)
                     turn_start = time.time()
             draw_board(screen, board, rows, cols, score_cols, selected, highlights, msg, timers, current)
-            turn += 1
-            if turn > 1e9:
+            # turn += 1
+            if turn > 1000:
                 print("Turn limit reached -> draw"); break
             continue
 
@@ -852,6 +903,9 @@ def run_gui(mode:str, circle_strategy:str, square_strategy:str, load_file:Option
                             w = check_win(board, rows, cols, score_cols)
                             if w: winner=w; msg = f"{w.title()} wins!"; game_over = True
                             current = opponent(current); selected=None; highlights=set(); action_mode=None
+                        else:
+                            print(info)
+                            time.sleep(100)
                     else:
                         msg = "Rotate needs selected river piece"
                 if action_mode=="flip" and selected:
@@ -865,6 +919,9 @@ def run_gui(mode:str, circle_strategy:str, square_strategy:str, load_file:Option
                             w = check_win(board, rows, cols, score_cols)
                             if w: winner=w; msg = f"{w.title()} wins!"; game_over = True
                             current = opponent(current); selected=None; highlights=set(); action_mode=None
+                        else:
+                            print(info)
+                            time.sleep(100)
                     elif ev.key == pygame.K_f:
                         m={"action":"flip","from":[sx,sy]}
                         ok,info = validate_and_apply_move(board,m,current,rows,cols,score_cols)
@@ -873,6 +930,9 @@ def run_gui(mode:str, circle_strategy:str, square_strategy:str, load_file:Option
                             w = check_win(board, rows, cols, score_cols)
                             if w: winner=w; msg = f"{w.title()} wins!"; game_over = True
                             current = opponent(current); selected=None; highlights=set(); action_mode=None
+                        else:
+                            print(info)
+                            time.sleep(100)
 
             if ev.type == pygame.MOUSEBUTTONDOWN and ev.button==1:
                 # measure elapsed thinking time before move
@@ -919,6 +979,9 @@ def run_gui(mode:str, circle_strategy:str, square_strategy:str, load_file:Option
                                 selected=None; highlights=set(); action_mode=None
                                 push_stage=None; push_candidate=None
                                 turn_start = time.time()  # NEW: reset for next turn
+                            else:
+                                print(info)
+                                time.sleep(100)
 
                     elif action_mode=="push":
                         info = compute_valid_targets(board,sx,sy,current,rows,cols,score_cols)
@@ -953,6 +1016,9 @@ def run_gui(mode:str, circle_strategy:str, square_strategy:str, load_file:Option
                                         current = opponent(current)
                                         selected=None
                                         turn_start = time.time()  # NEW
+                                    else:
+                                        print(info)
+                                        time.sleep(100)
 
                     elif action_mode=="flip":
                         p = board[sy][sx]
@@ -966,6 +1032,9 @@ def run_gui(mode:str, circle_strategy:str, square_strategy:str, load_file:Option
                                 current = opponent(current)
                                 selected=None; action_mode=None
                                 turn_start = time.time()  # NEW
+                            else:
+                                print(info)
+                                time.sleep(100)
                         else:
                             msg = "Press H/V for stone->river in flip mode"
 
@@ -985,6 +1054,9 @@ def run_gui(mode:str, circle_strategy:str, square_strategy:str, load_file:Option
                                 current = opponent(current)
                                 selected=None; highlights=set(); action_mode=None
                                 turn_start = time.time()  # NEW
+                            else:
+                                print(info)
+                                time.sleep(100)
                         else:
                             newp = board[ry][rx]
                             if newp and newp.owner==current:
@@ -992,10 +1064,10 @@ def run_gui(mode:str, circle_strategy:str, square_strategy:str, load_file:Option
                                 msg=f"Selected {selected}"
                             else:
                                 msg="Invalid click"
-        
         # turn += 1
-        if turn > 1e9:
-            print("Turn limit reached -> draw"); break
+        # print(turn)
+        # if turn > 1000:
+        #     print("Turn limit reached -> draw"); break
 
         # --- DRAW ---
         draw_board(screen, board, rows, cols, score_cols, selected, highlights, msg, timers, current)
@@ -1076,7 +1148,7 @@ def run_cli(mode:str, circle_strategy:str, square_strategy:str, load_file:Option
                 print(f"AI {current} has no moves; pass")
                 current = opponent(current)
                 turn += 1
-                if turn > 1e9:
+                if turn > 1000:
                     print("Turn limit reached -> draw"); break
                 # do not count the "press enter to continue" as clock time; skip it
                 input("\nPress Enter to continue...")  # keep for readability
@@ -1087,10 +1159,13 @@ def run_cli(mode:str, circle_strategy:str, square_strategy:str, load_file:Option
             if not ok:
                 current = opponent(current)
                 turn += 1
-                if turn > 1e9:
+                if turn > 1000:
                     print("Turn limit reached -> draw"); break
                 input("\nPress Enter to continue...")
                 continue
+            else:
+                print(msg)
+                time.sleep(100)
         else:
             # Human: measure time spent entering the move so the timer decreases
             print("Commands:")
@@ -1127,6 +1202,9 @@ def run_cli(mode:str, circle_strategy:str, square_strategy:str, load_file:Option
             print(f"Result: {msg}")
             if not ok:
                 continue
+            else:
+                print(msg)
+                time.sleep(100)
             
         # after a successful move / AI move attempt, check board win
         w = check_win(board, rows, cols, score_cols)
@@ -1138,7 +1216,7 @@ def run_cli(mode:str, circle_strategy:str, square_strategy:str, load_file:Option
         # next player's turn
         current = opponent(current)
         turn += 1
-        if turn > 1e9:
+        if turn > 1000:
             print("Turn limit reached -> draw"); break
 
         # Press Enter pause for readability — DO NOT count this time as player's clock (unchanged behavior)
