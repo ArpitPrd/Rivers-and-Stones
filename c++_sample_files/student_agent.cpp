@@ -62,15 +62,6 @@ private:
     const double UCT_C = 1.414;
     int turn_count = 0;
     
-    // int count_pieces_in_score_area(const BoardState& board, const string& pid, const vector<int>& score_cols) const;
-    // int count_pieces_near_score_area(const BoardState& board, const string& pid, const vector<int>& score_cols) const;
-
-    Node* mcts_select_init_node(Node* root);
-    Node* mcts_expand_node(Node* node, const vector<int>& score_cols);
-    void backpropagate(Node* node, double result);
-    Move find_playout_move(const vector<Move>& moves, const BoardState& board, const string& pid, const vector<int>& score_cols);
-    double simulate_playout(Node* node, const vector<int>& score_cols);
-
     Move get_opening_move();
     optional<Move> find_immediate_win(const BoardState& board, const vector<int>& score_cols);
     optional<Move> block_opponent_win(const BoardState& board, const vector<int>& score_cols);
@@ -574,6 +565,179 @@ public:
     }
 
 
+    Node* mcts_select_init_node(Node* root) {
+        // cout << "in select node " << endl;
+        Node* current = root;
+
+        while (current->is_fully_expanded && !current->is_terminal) {
+            Node* best_child = nullptr;
+            double best_score = -numeric_limits<double>::infinity();
+
+            for (const auto& child : current->children) {
+                double uct_score;
+
+                if (child->playouts == 0) {
+
+                    uct_score = numeric_limits<double>::infinity();
+                } else {
+
+                    double parent_visits = static_cast<double>(max(1, current->playouts));
+                    double exploitation = static_cast<double>(child->wins) / static_cast<double>(child->playouts);
+                    double exploration = UCT_C * sqrt(log(parent_visits) / static_cast<double>(child->playouts));
+                    uct_score = exploitation + exploration;
+                }
+
+                if (uct_score > best_score) {
+                    best_score = uct_score;
+                    best_child = child.get();
+                }
+            }
+
+            if (!best_child) break; // safety
+            current = best_child;
+            // cout << current->children.size() << " children" << endl;
+        }
+        // cout << "exit sekect bni" << endl;
+        return current;
+    }
+
+
+    Node* mcts_expand_node(Node* node, const vector<int>& score_cols) {
+        if (node->untried_moves.empty()) {
+            node->is_fully_expanded = true;
+            return node;
+        }
+        Move move = node->untried_moves.back();
+        node->untried_moves.pop_back();
+        if (node->untried_moves.empty()) node->is_fully_expanded = true;
+        
+        BoardState new_state = try_move(node->state, move, score_cols);
+        auto new_child = make_unique<Node>();
+        new_child->state = new_state;
+        new_child->parent = node;
+        new_child->move = move;
+        new_child->pid = (node->pid == "circle") ? "square" : "circle";
+        
+        string winner = check_if_won(new_state, score_cols);
+        if (!winner.empty()) {
+            new_child->is_terminal = true;
+            new_child->terminal_result = winner;
+        } else {
+            new_child->untried_moves = get_all_moves(new_state, new_child->pid, score_cols);
+            if (new_child->untried_moves.empty()) new_child->is_terminal = true;
+        }
+        
+        Node* child_ptr = new_child.get();
+        node->children.push_back(std::move(new_child));
+        return child_ptr;
+    }
+
+
+    void backpropagate(Node* node, double result) {
+        Node* current = node;
+        while (current != nullptr) {
+            current->playouts++;
+            if (current->parent != nullptr) {
+                if (current->parent->pid != this->side) current->wins += (1.0 - result);
+                else current->wins += result;
+            }
+            current = current->parent;
+        }
+    }
+
+
+
+    Move find_playout_move( const vector<Move>& moves, const BoardState& board,  const string& pid, const vector<int>& score_cols) {
+        if (moves.empty()) return {};
+
+        vector<Move> scoring_moves, distance_reducing_moves, gap_moves;
+
+        auto get_closest_score_dist = [&](int px, int py) {
+            int min_dist = numeric_limits<int>::max();
+            int scoring_row_for_current_player = (pid == "circle") ? 2 : board_rows - 3;
+            for (int sx : score_cols) {
+                min_dist = min(min_dist, abs(px - sx) + abs(py - scoring_row_for_current_player));
+            }
+            return min_dist;
+        };
+
+        int scoring_row_for_current_player = (pid == "circle") ? 2 : board_rows - 3;
+        vector<int> gap_cols;
+        for (int sx : score_cols) {
+            if (is_inside_board(sx, scoring_row_for_current_player) && board[scoring_row_for_current_player][sx].empty()) {
+                gap_cols.push_back(sx);
+            }
+        }
+
+        auto get_closest_gap_dist = [&](int px, int py) {
+            int min_dist = numeric_limits<int>::max();
+            for (int gx : gap_cols) {
+                min_dist = min(min_dist, abs(px - gx) + abs(py - scoring_row_for_current_player));
+            }
+            return min_dist;
+        };
+
+        for (const auto& move : moves) {
+            if (move.action == "move" || move.action == "push") {
+                if (move.from.empty() || move.to.empty()) continue;
+                vector<int> start = move.from;
+                vector<int> target = move.to;
+
+
+                if (present_in_scoring(target[0], target[1], pid, score_cols)) {
+                    scoring_moves.push_back(move);
+                    continue;
+                }
+
+
+                int old_dist = get_closest_score_dist(start[0], start[1]);
+                int new_dist = get_closest_score_dist(target[0], target[1]);
+                if (new_dist < old_dist) {
+                    distance_reducing_moves.push_back(move);
+                    continue;
+                }
+
+
+                if (!gap_cols.empty()) {
+                    int old_gap_dist = get_closest_gap_dist(start[0], start[1]);
+                    int new_gap_dist = get_closest_gap_dist(target[0], target[1]);
+                    if (new_gap_dist < old_gap_dist) {
+                        gap_moves.push_back(move);
+                    }
+                }
+            }
+        }
+
+        if (!scoring_moves.empty()) return scoring_moves[gen() % scoring_moves.size()];
+        if (!distance_reducing_moves.empty()) return distance_reducing_moves[gen() % distance_reducing_moves.size()];
+        if (!gap_moves.empty()) return gap_moves[gen() % gap_moves.size()];
+
+
+        return moves[gen() % moves.size()];
+    }
+
+
+    double simulate_playout(Node* node, const vector<int>& score_cols) {
+        if (node->is_terminal) {
+            if (node->terminal_result == this->side) return 1.0;
+            if (node->terminal_result.empty()) return 0.5;
+            return 0.0;
+        }
+        BoardState current_state = node->state;
+        string current_player = node->pid;
+        int moves_limit = 30;
+        while (moves_limit-- > 0) {
+            string winner = check_if_won(current_state, score_cols);
+            if (!winner.empty()) return (winner == this->side) ? 1.0 : 0.0;
+            auto moves = get_all_moves(current_state, current_player, score_cols);
+            if (moves.empty()) return 0.5;
+            Move move_to_play = find_playout_move(moves, current_state, current_player, score_cols);
+            current_state = try_move(current_state, move_to_play, score_cols);
+            current_player = (current_player == "circle") ? "square" : "circle";
+        }
+        return evaluate_position(current_state, this->side, score_cols);
+    }
+
 };
 
 StudentAgent::StudentAgent(string s) : side(move(s)), gen(rd()) {
@@ -825,178 +989,10 @@ string flip(string ori) {
 }
 
 
-Node* StudentAgent::mcts_select_init_node(Node* root) {
-    // cout << "in select node " << endl;
-    Node* current = root;
-
-    while (current->is_fully_expanded && !current->is_terminal) {
-        Node* best_child = nullptr;
-        double best_score = -numeric_limits<double>::infinity();
-
-        for (const auto& child : current->children) {
-            double uct_score;
-
-            if (child->playouts == 0) {
-
-                uct_score = numeric_limits<double>::infinity();
-            } else {
-
-                double parent_visits = static_cast<double>(max(1, current->playouts));
-                double exploitation = static_cast<double>(child->wins) / static_cast<double>(child->playouts);
-                double exploration = UCT_C * sqrt(log(parent_visits) / static_cast<double>(child->playouts));
-                uct_score = exploitation + exploration;
-            }
-
-            if (uct_score > best_score) {
-                best_score = uct_score;
-                best_child = child.get();
-            }
-        }
-
-        if (!best_child) break; // safety
-        current = best_child;
-        // cout << current->children.size() << " children" << endl;
-    }
-    // cout << "exit sekect bni" << endl;
-    return current;
-}
 
 
-Node* StudentAgent::mcts_expand_node(Node* node, const vector<int>& score_cols) {
-    if (node->untried_moves.empty()) {
-        node->is_fully_expanded = true;
-        return node;
-    }
-    Move move = node->untried_moves.back();
-    node->untried_moves.pop_back();
-    if (node->untried_moves.empty()) node->is_fully_expanded = true;
-    
-    BoardState new_state = try_move(node->state, move, score_cols);
-    auto new_child = make_unique<Node>();
-    new_child->state = new_state;
-    new_child->parent = node;
-    new_child->move = move;
-    new_child->pid = (node->pid == "circle") ? "square" : "circle";
-    
-    string winner = check_if_won(new_state, score_cols);
-    if (!winner.empty()) {
-        new_child->is_terminal = true;
-        new_child->terminal_result = winner;
-    } else {
-        new_child->untried_moves = get_all_moves(new_state, new_child->pid, score_cols);
-        if (new_child->untried_moves.empty()) new_child->is_terminal = true;
-    }
-    
-    Node* child_ptr = new_child.get();
-    node->children.push_back(std::move(new_child));
-    return child_ptr;
-}
-
-Move StudentAgent::find_playout_move(
-    const vector<Move>& moves, const BoardState& board, 
-    const string& pid, const vector<int>& score_cols) 
-{
-    if (moves.empty()) return {};
-
-    vector<Move> scoring_moves, distance_reducing_moves, gap_moves;
-
-    auto get_closest_score_dist = [&](int px, int py) {
-        int min_dist = numeric_limits<int>::max();
-        int scoring_row_for_current_player = (pid == "circle") ? 2 : board_rows - 3;
-        for (int sx : score_cols) {
-            min_dist = min(min_dist, abs(px - sx) + abs(py - scoring_row_for_current_player));
-        }
-        return min_dist;
-    };
-
-    int scoring_row_for_current_player = (pid == "circle") ? 2 : board_rows - 3;
-    vector<int> gap_cols;
-    for (int sx : score_cols) {
-        if (is_inside_board(sx, scoring_row_for_current_player) && board[scoring_row_for_current_player][sx].empty()) {
-            gap_cols.push_back(sx);
-        }
-    }
-
-    auto get_closest_gap_dist = [&](int px, int py) {
-        int min_dist = numeric_limits<int>::max();
-        for (int gx : gap_cols) {
-            min_dist = min(min_dist, abs(px - gx) + abs(py - scoring_row_for_current_player));
-        }
-        return min_dist;
-    };
-
-    for (const auto& move : moves) {
-        if (move.action == "move" || move.action == "push") {
-            if (move.from.empty() || move.to.empty()) continue;
-            vector<int> start = move.from;
-            vector<int> target = move.to;
 
 
-            if (present_in_scoring(target[0], target[1], pid, score_cols)) {
-                scoring_moves.push_back(move);
-                continue;
-            }
-
-
-            int old_dist = get_closest_score_dist(start[0], start[1]);
-            int new_dist = get_closest_score_dist(target[0], target[1]);
-            if (new_dist < old_dist) {
-                distance_reducing_moves.push_back(move);
-                continue;
-            }
-
-
-            if (!gap_cols.empty()) {
-                int old_gap_dist = get_closest_gap_dist(start[0], start[1]);
-                int new_gap_dist = get_closest_gap_dist(target[0], target[1]);
-                if (new_gap_dist < old_gap_dist) {
-                    gap_moves.push_back(move);
-                }
-            }
-        }
-    }
-
-    if (!scoring_moves.empty()) return scoring_moves[gen() % scoring_moves.size()];
-    if (!distance_reducing_moves.empty()) return distance_reducing_moves[gen() % distance_reducing_moves.size()];
-    if (!gap_moves.empty()) return gap_moves[gen() % gap_moves.size()];
-
-
-    return moves[gen() % moves.size()];
-}
-
-
-double StudentAgent::simulate_playout(Node* node, const vector<int>& score_cols) {
-    if (node->is_terminal) {
-        if (node->terminal_result == this->side) return 1.0;
-        if (node->terminal_result.empty()) return 0.5;
-        return 0.0;
-    }
-    BoardState current_state = node->state;
-    string current_player = node->pid;
-    int moves_limit = 30;
-    while (moves_limit-- > 0) {
-        string winner = check_if_won(current_state, score_cols);
-        if (!winner.empty()) return (winner == this->side) ? 1.0 : 0.0;
-        auto moves = get_all_moves(current_state, current_player, score_cols);
-        if (moves.empty()) return 0.5;
-        Move move_to_play = find_playout_move(moves, current_state, current_player, score_cols);
-        current_state = try_move(current_state, move_to_play, score_cols);
-        current_player = (current_player == "circle") ? "square" : "circle";
-    }
-    return evaluate_position(current_state, this->side, score_cols);
-}
-
-void StudentAgent::backpropagate(Node* node, double result) {
-    Node* current = node;
-    while (current != nullptr) {
-        current->playouts++;
-        if (current->parent != nullptr) {
-            if (current->parent->pid != this->side) current->wins += (1.0 - result);
-            else current->wins += result;
-        }
-        current = current->parent;
-    }
-}
 
 PYBIND11_MODULE(student_agent_module, m) {
     py::class_<Move>(m, "Move")
