@@ -62,28 +62,26 @@ private:
     const double UCT_C = 1.414;
     int turn_count = 0;
     
-    Move get_opening_move();
-    optional<Move> find_immediate_win(const BoardState& board, const vector<int>& score_cols);
-    optional<Move> block_opponent_win(const BoardState& board, const vector<int>& score_cols);
-    Move find_mcts_move(const BoardState& board, const vector<int>& score_cols);
-
 
 public:
     explicit StudentAgent(string s); 
-    Move choose(const BoardState& board, int, int, const vector<int>& score_cols, float, float); 
 
-
-    bool is_inside_board(int x, int y) const {
+    bool is_inside_board(int x, int y) {
         return x >= 0 && x < board_cols && y >= 0 && y < board_rows;
     }
 
-    bool present_in_scoring(int x, int y, const string& pid, const vector<int>& score_cols) const {
-        if (!is_inside_board(x,y) || score_cols.empty()) return false;
-        bool in_score_row = (pid == "circle") ? (y == 2) : (y == board_rows - 3);
-        return in_score_row && find(score_cols.begin(), score_cols.end(), x) != score_cols.end();
+    bool present_in_scoring(int x, int y, const string& pid, const vector<int>& score_cols) {
+        if (!is_inside_board(x,y) || score_cols.empty()) {
+            return false;
+        }
+
+        bool present_in_col = find(score_cols.begin(), score_cols.end(), x) != score_cols.end();
+
+        bool present_in_row = (pid == "circle") ? (y == 2) : (y == board_rows - 3);
+        return present_in_col && present_in_row;
     }
 
-    void identify_river_motion(vector<Move>& moves, const BoardState& board, int start_x, int start_y, int curr_x, int curr_y, const string& pid, const vector<int>& score_cols, set<pair<int, int>>& visited) const {
+    void identify_river_motion(vector<Move>& moves, const BoardState& board, int start_x, int start_y, int curr_x, int curr_y, const string& pid, const vector<int>& score_cols, set<pair<int, int>>& visited) {
         if (!is_inside_board(curr_x, curr_y) || present_in_scoring(curr_x, curr_y, (pid == side) ? opponent_side : side, score_cols)) return;
         visited.insert({curr_x, curr_y});
         const auto& cell = board[curr_y][curr_x];
@@ -93,33 +91,50 @@ public:
         int dx = (current_orientation == "horizontal") ? 1 : 0;
         int dy = (current_orientation == "vertical") ? 1 : 0;
         
-        for (int dir = -1; dir <= 1; dir += 2) {
-            int next_x = curr_x + (dx * dir), next_y = curr_y + (dy * dir);
-            while (is_inside_board(next_x, next_y)) {
-                if (present_in_scoring(next_x, next_y, (pid == side) ? opponent_side : side, score_cols)) break;
-                const auto& next_cell = board[next_y][next_x];
-                if (next_cell.empty()) {
-                    moves.push_back({"move", {start_x, start_y}, {next_x, next_y}, {}, ""});
-                } else if (get_key(next_cell, "side") == "river") {
-                    if (get_key(next_cell, "orientation") == current_orientation && visited.find({next_x, next_y}) == visited.end()) {
-                        identify_river_motion(moves, board, start_x, start_y, next_x, next_y, pid, score_cols, visited);
-                    }
-                    break;
-                } else {
-                    break;
+        int dir = -1;
+        int next_x = curr_x + (dx * dir), next_y = curr_y + (dy * dir);
+        while (is_inside_board(next_x, next_y)) {
+            if (present_in_scoring(next_x, next_y, (pid == side) ? opponent_side : side, score_cols)) break;
+            const auto& next_cell = board[next_y][next_x];
+            if (next_cell.empty()) {
+                moves.push_back({"move", {start_x, start_y}, {next_x, next_y}, {}, ""});
+            } 
+            else if (get_key(next_cell, "side") == "river") {
+                if (get_key(next_cell, "orientation") == current_orientation && visited.find({next_x, next_y}) == visited.end()) {
+                    identify_river_motion(moves, board, start_x, start_y, next_x, next_y, pid, score_cols, visited);
                 }
-                next_x += (dx * dir);
-                next_y += (dy * dir);
+                break;
+            } 
+            else {
+                break;
             }
+            next_x += (dx * dir);
+            next_y += (dy * dir);
+        }
+        dir = 1;
+        next_x = curr_x + (dx * dir), next_y = curr_y + (dy * dir);
+        while (is_inside_board(next_x, next_y)) {
+            if (present_in_scoring(next_x, next_y, (pid == side) ? opponent_side : side, score_cols)) break;
+            const auto& next_cell = board[next_y][next_x];
+            if (next_cell.empty()) {
+                moves.push_back({"move", {start_x, start_y}, {next_x, next_y}, {}, ""});
+            } 
+            else if (get_key(next_cell, "side") == "river") {
+                if (get_key(next_cell, "orientation") == current_orientation && visited.find({next_x, next_y}) == visited.end()) {
+                    identify_river_motion(moves, board, start_x, start_y, next_x, next_y, pid, score_cols, visited);
+                }
+                break;
+            } 
+            else {
+                break;
+            }
+            next_x += (dx * dir);
+            next_y += (dy * dir);
         }
     }
 
-    void find_river_moves(vector<Move>& moves, const BoardState& board, int start_x, int start_y, int curr_x, int curr_y, const string& pid, const vector<int>& score_cols) const {
-        set<pair<int, int>> visited;
-        identify_river_motion(moves, board, start_x, start_y, curr_x, curr_y, pid, score_cols, visited);
-    }
 
-    vector<Move> get_all_moves(const BoardState& board, const string& pid, const vector<int>& score_cols) const {
+    vector<Move> get_all_moves(const BoardState& board, const string& pid, const vector<int>& score_cols) {
         vector<Move> moves;
         vector<pair<int, int>> dirs = {{0, 1}, {0, -1}, {1, 0}, {-1, 0}};
         string current_opponent_side = (pid == this->side) ? this->opponent_side : this->side;
@@ -218,7 +233,11 @@ public:
                     
                     const auto& next_cell = board[ny][nx];
                     // if (next_cell.empty()) moves.push_back({"move", {x, y}, {nx, ny}, {}, ""});
-                    if (get_key(next_cell, "side") == "river") find_river_moves(moves, board, x, y, nx, ny, pid, score_cols);
+                    if (get_key(next_cell, "side") == "river") {
+                        set<pair<int, int>> visited;
+                        identify_river_motion(moves, board, x, y, nx, ny, pid, score_cols, visited);
+                    
+                    }
                 }
 
                 for (auto const& [dx, dy] : dirs) {
@@ -302,11 +321,7 @@ public:
     optional<Move> find_immediate_flip_in_scoring_area(const BoardState& board, const vector<int>& score_cols) {
         for (int y = 0; y < board_rows; ++y) {
             for (int x = 0; x < board_cols; ++x) {
-                if (!board[y][x].empty() && 
-                    get_key(board[y][x], "owner") == this->side &&
-                    get_key(board[y][x], "side") == "river" && 
-                    present_in_scoring(x, y, this->side, score_cols)) 
-                {
+                if (!board[y][x].empty() && get_key(board[y][x], "owner") == this->side && get_key(board[y][x], "side") == "river" && present_in_scoring(x, y, this->side, score_cols)) {
                     return Move{"flip", {x, y}, {x, y}, {}, ""};
                 }
             }
@@ -315,69 +330,76 @@ public:
     }
 
 
-    BoardState try_move(const BoardState& board, const Move& move, const vector<int>& score_cols) const {
-        auto next_board = board;
-        if (move.from.size() < 2) return next_board;
+    BoardState try_move(const BoardState& board, const Move& move, const vector<int>& score_cols) {
+        auto move_applied_board = board;
+        if (move.from.size() < 2) return move_applied_board;
         int from_x = move.from[0], from_y = move.from[1];
-        if (!is_inside_board(from_x, from_y) || next_board[from_y][from_x].empty()) return next_board;
+        if (!is_inside_board(from_x, from_y) || move_applied_board[from_y][from_x].empty()) return move_applied_board;
 
-        string owner = get_key(next_board[from_y][from_x], "owner");
+        string owner = get_key(move_applied_board[from_y][from_x], "owner");
 
         if (move.action == "move") {
-            if (move.to.size() < 2) return next_board;
+            if (move.to.size() < 2) return move_applied_board;
             int to_x = move.to[0], to_y = move.to[1];
-            if (!is_inside_board(to_x, to_y)) return next_board;
+            if (!is_inside_board(to_x, to_y)) return move_applied_board;
 
-            next_board[to_y][to_x] = next_board[from_y][from_x];
-            next_board[from_y][from_x].clear();
+            move_applied_board[to_y][to_x] = move_applied_board[from_y][from_x];
+            move_applied_board[from_y][from_x].clear();
 
             if (present_in_scoring(to_x, to_y, owner, score_cols)) {
-                next_board[to_y][to_x]["side"] = "stone";
-                next_board[to_y][to_x].erase("orientation");
+                move_applied_board[to_y][to_x]["side"] = "stone";
+                move_applied_board[to_y][to_x].erase("orientation");
             }
 
-        } else if (move.action == "push") {
-            if (move.to.size() < 2 || move.pushed_to.size() < 2) return next_board;
+        } 
+        else if (move.action == "push") {
+            if (move.to.size() < 2 || move.pushed_to.size() < 2) return move_applied_board;
             int to_x = move.to[0], to_y = move.to[1];
             int p_x = move.pushed_to[0], p_y = move.pushed_to[1];
-            if (!is_inside_board(to_x, to_y) || !is_inside_board(p_x, p_y)) return next_board;
+            if (!is_inside_board(to_x, to_y) || !is_inside_board(p_x, p_y)) return move_applied_board;
 
-            next_board[p_y][p_x] = next_board[to_y][to_x];
-            string pushed_owner = get_key(next_board[p_y][p_x], "owner");
+            move_applied_board[p_y][p_x] = move_applied_board[to_y][to_x];
+            string pushed_owner = get_key(move_applied_board[p_y][p_x], "owner");
 
             if (present_in_scoring(p_x, p_y, pushed_owner, score_cols)) {
-                next_board[p_y][p_x]["side"] = "stone";
-                next_board[p_y][p_x].erase("orientation");
+                move_applied_board[p_y][p_x]["side"] = "stone";
+                move_applied_board[p_y][p_x].erase("orientation");
             }
 
-            next_board[to_y][to_x] = next_board[from_y][from_x];
+            move_applied_board[to_y][to_x] = move_applied_board[from_y][from_x];
 
             if (present_in_scoring(to_x, to_y, owner, score_cols)) {
-                next_board[to_y][to_x]["side"] = "stone";
-                next_board[to_y][to_x].erase("orientation");
+                move_applied_board[to_y][to_x]["side"] = "stone";
+                move_applied_board[to_y][to_x].erase("orientation");
             }
 
-            next_board[from_y][from_x].clear();
+            move_applied_board[from_y][from_x].clear();
 
-        } else if (move.action == "flip") {
-            auto& piece_to_flip = next_board[from_y][from_x];
-            if (get_key(piece_to_flip, "side") == "stone") {
-                piece_to_flip["side"] = "river";
-                piece_to_flip["orientation"] = move.orientation;
-            } else {
-                piece_to_flip["side"] = "stone";
-                piece_to_flip.erase("orientation");
+        } 
+        else if (move.action == "flip" || move.action == "rotate") {
+            if (move.action == "flip") {
+                auto& piece_to_flip = move_applied_board[from_y][from_x];
+                if (get_key(piece_to_flip, "side") == "stone") {
+                    piece_to_flip["side"] = "river";
+                    piece_to_flip["orientation"] = move.orientation;
+                } 
+                else {
+                    piece_to_flip["side"] = "stone";
+                    piece_to_flip.erase("orientation");
+                }
+
+            } 
+            else if (move.action == "rotate") {
+                auto& piece_to_rotate = move_applied_board[from_y][from_x];
+                piece_to_rotate["orientation"] = (get_key(piece_to_rotate, "orientation") == "horizontal") ? "vertical" : "horizontal";
             }
-
-        } else if (move.action == "rotate") {
-            auto& piece_to_rotate = next_board[from_y][from_x];
-            piece_to_rotate["orientation"] = (get_key(piece_to_rotate, "orientation") == "horizontal") ? "vertical" : "horizontal";
         }
+        
 
-        return next_board;
+        return move_applied_board;
     }
 
-    string check_if_won(const BoardState& board, const vector<int>& score_cols) const {
+    string check_if_won(const BoardState& board, const vector<int>& score_cols) {
         if (count_pieces_in_score_area(board, "circle", score_cols) >= 4) {
             // cout << "declare circle win" << endl;
             return "circle";
@@ -390,6 +412,100 @@ public:
     }
 
 
+    int dist_to_closest_gap(int px, int py, vector<int> gap_cols, int scoring_row) {
+        int min_dist = numeric_limits<int>::max();
+        for (int gx : gap_cols) {
+            min_dist = min(min_dist, abs(px - gx) + abs(py - scoring_row));
+        }
+        return min_dist;
+    }
+
+    bool is_valid_move(const Move& move, const BoardState& board, const vector<int>& score_cols) {
+        if (move.from.size() < 2 || move.to.size() < 2) return false;
+
+        int fx = move.from[0], fy = move.from[1];
+        int tx = move.to[0], ty = move.to[1];
+
+        if (!is_inside_board(fx, fy) || !is_inside_board(tx, ty)) return false;
+
+        if (board[fy][fx].empty() || get_key(board[fy][fx], "owner") != side) return false;
+
+        auto sgn = [](int v) { return (v > 0) - (v < 0); };
+
+        if (move.action == "move") {
+            if (!board[ty][tx].empty()) return false;
+
+            BoardState next = try_move(board, move, score_cols);
+            return !next[ty][tx].empty() && get_key(next[ty][tx], "owner") == side;
+        }
+
+        if (move.action == "push") {
+            // cout << "push" << endl;
+            if (move.pushed_to.size() < 2) return false;
+            int px = move.pushed_to[0], py = move.pushed_to[1];
+
+            if (!is_inside_board(px, py)) return false;
+
+            string type_of_piece = get_key(board[fy][fx], "type");  
+
+            if (type_of_piece == "stone") {
+                int dx = tx - fx, dy = ty - fy;
+                if (abs(dx) + abs(dy) != 1) return false;
+
+                if (board[ty][tx].empty()) return false;
+
+                if (!is_inside_board(px, py)) return false;
+                if (!board[py][px].empty()) return false;
+
+                BoardState next = try_move(board, move, score_cols);
+
+                if (next[ty][tx].empty() || get_key(next[ty][tx], "owner") != side) return false;
+                if (next[py][px].empty()) return false;
+
+                return true;
+            }
+
+
+            if (type_of_piece == "river") {
+
+                if (board[ty][tx].empty() || get_key(board[ty][tx], "type") != "stone")
+                    return false;
+
+                int dx = (px - tx == 0) ? 0 : (px - tx) / abs(px - tx);
+                int dy = (py - ty == 0) ? 0 : (py - ty) / abs(py - ty);
+
+
+                if (dx != 0 && dy != 0) return false;
+
+
+                int steps = max(abs(px - tx), abs(py - ty));
+                if (steps < 1) return false;
+                for (int i = 1; i <= steps; i++) {
+                    int cx = tx + dx * i;
+                    int cy = ty + dy * i;
+                    if (!is_inside_board(cx, cy)) return false;
+                    if (i < steps && !board[cy][cx].empty()) return false; 
+                }
+
+                BoardState next = try_move(board, move, score_cols);
+
+                if (next[ty][tx].empty() || get_key(next[ty][tx], "type") != "stone") return false;
+                if (get_key(next[ty][tx], "owner") != side) return false;
+
+
+                if (next[py][px].empty() || get_key(next[py][px], "type") != "stone") return false;
+
+
+
+                return true;
+            }
+
+            return false;
+        }
+
+
+        return false;
+    };
 
     optional<Move> find_direct_entry_path(const BoardState& board, const vector<int>& score_cols) {
         auto moves = get_all_moves(board, side, score_cols);
@@ -404,108 +520,11 @@ public:
             }
         }
 
-        auto dist_to_closest_gap = [&](int px, int py) {
-            int min_dist = numeric_limits<int>::max();
-            for (int gx : gap_cols) {
-                min_dist = min(min_dist, abs(px - gx) + abs(py - scoring_row));
-            }
-            return min_dist;
-        };
-
-        auto is_valid_move = [&](const Move& move) -> bool {
-            if (move.from.size() < 2 || move.to.size() < 2) return false;
-
-            int fx = move.from[0], fy = move.from[1];
-            int tx = move.to[0], ty = move.to[1];
-
-            if (!is_inside_board(fx, fy) || !is_inside_board(tx, ty)) return false;
-
-            if (board[fy][fx].empty() || get_key(board[fy][fx], "owner") != side) return false;
-
-            auto sgn = [](int v) { return (v > 0) - (v < 0); };
-
-            if (move.action == "move") {
-                if (!board[ty][tx].empty()) return false;
-
-                BoardState next = try_move(board, move, score_cols);
-                return !next[ty][tx].empty() && get_key(next[ty][tx], "owner") == side;
-            }
-
-            if (move.action == "push") {
-                // cout << "push" << endl;
-                if (move.pushed_to.size() < 2) return false;
-                int px = move.pushed_to[0], py = move.pushed_to[1];
-
-                if (!is_inside_board(px, py)) return false;
-
-                string piece_type = get_key(board[fy][fx], "type");  
-
-                if (piece_type == "stone") {
-                    int dx = tx - fx, dy = ty - fy;
-                    if (abs(dx) + abs(dy) != 1) return false;
-
-                    if (board[ty][tx].empty()) return false;
-
-                    if (!is_inside_board(px, py)) return false;
-                    if (!board[py][px].empty()) return false;
-
-                    BoardState next = try_move(board, move, score_cols);
-
-                    if (next[ty][tx].empty() || get_key(next[ty][tx], "owner") != side) return false;
-                    if (next[py][px].empty()) return false;
-
-                    return true;
-                }
-
-
-                if (piece_type == "river") {
-
-                    if (board[ty][tx].empty() || get_key(board[ty][tx], "type") != "stone")
-                        return false;
-
-                    int dx = (px - tx == 0) ? 0 : (px - tx) / abs(px - tx);
-                    int dy = (py - ty == 0) ? 0 : (py - ty) / abs(py - ty);
-
-
-                    if (dx != 0 && dy != 0) return false;
-
-
-                    int steps = max(abs(px - tx), abs(py - ty));
-                    if (steps < 1) return false;
-                    for (int i = 1; i <= steps; i++) {
-                        int cx = tx + dx * i;
-                        int cy = ty + dy * i;
-                        if (!is_inside_board(cx, cy)) return false;
-                        if (i < steps && !board[cy][cx].empty()) return false; 
-                    }
-
-                    BoardState next = try_move(board, move, score_cols);
-
-                    if (next[ty][tx].empty() || get_key(next[ty][tx], "type") != "stone") return false;
-                    if (get_key(next[ty][tx], "owner") != side) return false;
-
-
-                    if (next[py][px].empty() || get_key(next[py][px], "type") != "stone") return false;
-
-
-
-                    return true;
-                }
-
-                return false;
-            }
-
-
-            return false;
-        };
-
-
-
         for (const auto& move : moves) {
             if ((move.action != "move" && move.action != "push") ||
                 present_in_scoring(move.from[0], move.from[1], side, score_cols)) continue;
 
-            if (!is_valid_move(move)) continue;
+            if (!is_valid_move(move, board, score_cols)) continue;
 
             int tx = move.to[0], ty = move.to[1];
             if (present_in_scoring(tx, ty, side, score_cols)) return move;
@@ -516,10 +535,10 @@ public:
                 if ((move.action != "move" && move.action != "push") ||
                     present_in_scoring(move.from[0], move.from[1], side, score_cols)) continue;
 
-                if (!is_valid_move(move)) continue;
+                if (!is_valid_move(move, board, score_cols)) continue;
 
-                int old_dist = dist_to_closest_gap(move.from[0], move.from[1]);
-                int new_dist = dist_to_closest_gap(move.to[0], move.to[1]);
+                int old_dist = dist_to_closest_gap(move.from[0], move.from[1], gap_cols, scoring_row);
+                int new_dist = dist_to_closest_gap(move.to[0], move.to[1], gap_cols, scoring_row);
                 if (new_dist < old_dist) return move;
             }
         }
@@ -527,7 +546,7 @@ public:
         return nullopt;
     }
 
-    double evaluate_position(const BoardState& board, const string& pid, const vector<int>& score_cols) const {
+    double evaluate_position(const BoardState& board, const string& pid, const vector<int>& score_cols) {
         int my_stones = count_pieces_in_score_area(board, pid, score_cols);
         int opp_stones = count_pieces_in_score_area(board, (pid == "circle") ? "square" : "circle", score_cols);
         int my_near = count_pieces_near_score_area(board, pid, score_cols);
@@ -537,7 +556,7 @@ public:
     }
 
 
-    int count_pieces_in_score_area(const BoardState& board, const string& pid, const vector<int>& score_cols) const {
+    int count_pieces_in_score_area(const BoardState& board, const string& pid, const vector<int>& score_cols) {
         int count = 0;
         for (int y = 0; y < board_rows; ++y) {
             for (int x = 0; x < board_cols; ++x) {
@@ -552,7 +571,7 @@ public:
         return count;
     }
 
-    int count_pieces_near_score_area(const BoardState& board, const string& pid, const vector<int>& score_cols) const {
+    int count_pieces_near_score_area(const BoardState& board, const string& pid, const vector<int>& score_cols) {
         int count = 0;
         int target_y = (pid == "circle") ? 3 : board_rows - 4;
         for (int x : score_cols) {
@@ -576,15 +595,22 @@ public:
             for (const auto& child : current->children) {
                 double uct_score;
 
+                double approx_uct_score, exact_uct_score;
                 if (child->playouts == 0) {
 
                     uct_score = numeric_limits<double>::infinity();
-                } else {
+                } 
+                
+                else {
 
                     double parent_visits = static_cast<double>(max(1, current->playouts));
                     double exploitation = static_cast<double>(child->wins) / static_cast<double>(child->playouts);
                     double exploration = UCT_C * sqrt(log(parent_visits) / static_cast<double>(child->playouts));
                     uct_score = exploitation + exploration;
+                }
+
+                if (true) {
+                    /*edge case for expansion*/
                 }
 
                 if (uct_score > best_score) {
@@ -612,54 +638,75 @@ public:
         if (node->untried_moves.empty()) node->is_fully_expanded = true;
         
         BoardState new_state = try_move(node->state, move, score_cols);
-        auto new_child = make_unique<Node>();
-        new_child->state = new_state;
-        new_child->parent = node;
-        new_child->move = move;
-        new_child->pid = (node->pid == "circle") ? "square" : "circle";
+        auto mcts_child = make_unique<Node>();
+        mcts_child->state = new_state;
+        mcts_child->parent = node;
+        mcts_child->move = move;
+        if (node->pid== "circle") {
+            mcts_child->pid = "square";
+        }
+        else {
+            mcts_child->pid = "circle";
+        }
         
         string winner = check_if_won(new_state, score_cols);
         if (!winner.empty()) {
-            new_child->is_terminal = true;
-            new_child->terminal_result = winner;
-        } else {
-            new_child->untried_moves = get_all_moves(new_state, new_child->pid, score_cols);
-            if (new_child->untried_moves.empty()) new_child->is_terminal = true;
+            mcts_child->is_terminal = true;
+            mcts_child->terminal_result = winner;
+        } 
+        
+        else {
+            if (!winner.empty()) {
+                mcts_child->is_terminal = true;
+                mcts_child->terminal_result = winner;
+            } 
+            mcts_child->untried_moves = get_all_moves(new_state, mcts_child->pid, score_cols);
+            if (mcts_child->untried_moves.empty()) {
+                mcts_child->is_terminal = true;
+            }
         }
         
-        Node* child_ptr = new_child.get();
-        node->children.push_back(std::move(new_child));
+        Node* child_ptr = mcts_child.get();
+        node->children.push_back(std::move(mcts_child));
         return child_ptr;
     }
 
 
     void backpropagate(Node* node, double result) {
-        Node* current = node;
-        while (current != nullptr) {
-            current->playouts++;
-            if (current->parent != nullptr) {
-                if (current->parent->pid != this->side) current->wins += (1.0 - result);
-                else current->wins += result;
+        Node* current_node = node;
+        while (current_node != nullptr) {
+            current_node->playouts++;
+            if (current_node->parent != nullptr) {
+                if (current_node->parent->pid != this->side) current_node->wins += (1.0 - result);
+                else current_node->wins += result;
             }
-            current = current->parent;
+            current_node = current_node->parent;
         }
     }
 
+    int get_closest_gap_dist(int px, int py, int scoring_row_for_current_player, const vector<int>& gap_cols) {
+        int min_dist = numeric_limits<int>::max();
+        for (int gx : gap_cols) {
+            min_dist = min(min_dist, abs(px - gx) + abs(py - scoring_row_for_current_player));
+        }
+        return min_dist;
+    };
 
+
+    int get_closest_score_dist(int px, int py, const string& pid, const vector<int>& score_cols, int board_rows) {
+        int min_dist = numeric_limits<int>::max();
+        int scoring_row_for_current_player = (pid == "circle") ? 2 : board_rows - 3;
+        for (int sx : score_cols) {
+            min_dist = min(min_dist, abs(px - sx) + abs(py - scoring_row_for_current_player));
+        }
+        return min_dist;
+    };
 
     Move find_playout_move( const vector<Move>& moves, const BoardState& board,  const string& pid, const vector<int>& score_cols) {
         if (moves.empty()) return {};
 
         vector<Move> scoring_moves, distance_reducing_moves, gap_moves;
 
-        auto get_closest_score_dist = [&](int px, int py) {
-            int min_dist = numeric_limits<int>::max();
-            int scoring_row_for_current_player = (pid == "circle") ? 2 : board_rows - 3;
-            for (int sx : score_cols) {
-                min_dist = min(min_dist, abs(px - sx) + abs(py - scoring_row_for_current_player));
-            }
-            return min_dist;
-        };
 
         int scoring_row_for_current_player = (pid == "circle") ? 2 : board_rows - 3;
         vector<int> gap_cols;
@@ -669,13 +716,7 @@ public:
             }
         }
 
-        auto get_closest_gap_dist = [&](int px, int py) {
-            int min_dist = numeric_limits<int>::max();
-            for (int gx : gap_cols) {
-                min_dist = min(min_dist, abs(px - gx) + abs(py - scoring_row_for_current_player));
-            }
-            return min_dist;
-        };
+        
 
         for (const auto& move : moves) {
             if (move.action == "move" || move.action == "push") {
@@ -690,8 +731,8 @@ public:
                 }
 
 
-                int old_dist = get_closest_score_dist(start[0], start[1]);
-                int new_dist = get_closest_score_dist(target[0], target[1]);
+                int old_dist = get_closest_score_dist(start[0], start[1], pid, score_cols, board_rows);
+                int new_dist = get_closest_score_dist(target[0], target[1], pid, score_cols, board_rows);
                 if (new_dist < old_dist) {
                     distance_reducing_moves.push_back(move);
                     continue;
@@ -699,8 +740,8 @@ public:
 
 
                 if (!gap_cols.empty()) {
-                    int old_gap_dist = get_closest_gap_dist(start[0], start[1]);
-                    int new_gap_dist = get_closest_gap_dist(target[0], target[1]);
+                    int old_gap_dist = get_closest_gap_dist(start[0], start[1], scoring_row_for_current_player, gap_cols);
+                    int new_gap_dist = get_closest_gap_dist(target[0], target[1], scoring_row_for_current_player, gap_cols);
                     if (new_gap_dist < old_gap_dist) {
                         gap_moves.push_back(move);
                     }
@@ -738,12 +779,226 @@ public:
         return evaluate_position(current_state, this->side, score_cols);
     }
 
+
+    Move get_opening_move() {
+        if (side == "circle") {
+            if (turn_count == 1) return {"push", {3, 8}, {3, 9}, {3,10}, ""}; 
+            if (turn_count == 2) return {"push", {3, 9}, {3, 10}, {3,11}, ""};
+            if (turn_count == 3) return {"push", {8, 8}, {8, 9}, {8,10}, ""};
+            if (turn_count == 4) return {"push", {8, 9}, {8, 10}, {8,11}, ""};  
+            if (turn_count == 5) return {"flip", {3, 10}, {3, 10}, {}, "vertical"}; 
+            if (turn_count == 6) return {"flip", {8, 10}, {8, 10}, {}, "vertical"};
+            if (turn_count == 7) return {"flip", {4, 9}, {4, 9}, {}, "horizontal"}; 
+            if (turn_count == 8) return {"flip", {5, 9}, {5, 9}, {}, "horizontal"};
+            if (turn_count == 9) return {"flip", {6, 9}, {6, 9}, {}, "horizontal"}; 
+            if (turn_count == 10) return {"flip", {7, 9}, {7, 9}, {}, "horizontal"};
+            if (turn_count == 11) return {"flip", {3, 11}, {3, 11}, {}, "vertical"}; 
+            if (turn_count == 12) return {"flip", {8, 11}, {8, 11}, {}, "vertical"};
+        } else {
+            if (turn_count == 1) return {"push", {3, 4}, {3, 3}, {3, 2}, ""};
+            if (turn_count == 2) return {"push", {3, 3}, {3, 2}, {3, 1}, ""};
+            if (turn_count == 3) return {"push", {8, 4}, {8, 3}, {8, 2}, ""};
+            if (turn_count == 4) return {"push", {8, 3}, {8, 2}, {8, 1}, ""};
+            if (turn_count == 5) return {"flip", {3, 2}, {3, 2}, {}, "vertical"};
+            if (turn_count == 6) return {"flip", {8, 2}, {8, 2}, {}, "vertical"};
+            if (turn_count == 7) return {"flip", {4, 3}, {4, 3}, {}, "horizontal"}; 
+            if (turn_count == 8) return {"flip", {5, 3}, {5, 3}, {}, "horizontal"};
+            if (turn_count == 9) return {"flip", {6, 3}, {6, 3}, {}, "horizontal"}; 
+            if (turn_count == 10) return {"flip", {7, 3}, {7, 3}, {}, "horizontal"};
+            if (turn_count == 11) return {"flip", {3, 1}, {3, 1}, {}, "vertical"}; 
+            if (turn_count == 12) return {"flip", {8, 1}, {8, 1}, {}, "vertical"};
+        }
+        return {};
+    }
+
+
+
+    optional<Move> find_immediate_win(const BoardState& board, const vector<int>& score_cols) {
+        auto moves = get_all_moves(board, side, score_cols);
+        for (const auto& move : moves) {
+            BoardState next_state = try_move(board, move, score_cols);
+            if (check_if_won(next_state, score_cols) == side) {
+                return move;
+            }
+        }
+        return nullopt;
+    }
+
+
+    optional<Move> block_opponent_win(const BoardState& board, const vector<int>& score_cols) {
+        auto opponent_moves = get_all_moves(board, opponent_side, score_cols);
+        for (const auto& opp_move : opponent_moves) {
+            BoardState next_state = try_move(board, opp_move, score_cols);
+            if (check_if_won(next_state, score_cols) == opponent_side) {
+                vector<int> target_square = opp_move.action == "move" ? opp_move.to : opp_move.pushed_to;
+                if (target_square.empty()) continue;
+
+                auto my_moves = get_all_moves(board, side, score_cols);
+                for (const auto& my_move : my_moves) {
+                    vector<int> my_target = my_move.action == "move" ? my_move.to : my_move.pushed_to;
+                    if (my_target == target_square) {
+                        return my_move;
+                    }
+                }
+            }
+        }
+        return nullopt;
+    }
+
+
+    Move find_mcts_move(const BoardState& board, const vector<int>& score_cols) {
+        auto root_moves = get_all_moves(board, this->side, score_cols);
+        // cout << root_moves.size() << " possible moves" << endl;
+        if (root_moves.empty()) return {};
+        
+        auto root = make_unique<Node>();
+        root->state = board;
+        root->pid = this->side;
+        root->untried_moves = root_moves;
+        shuffle(root->untried_moves.begin(), root->untried_moves.end(), gen);
+        
+        string winner = check_if_won(board, score_cols);
+        if (!winner.empty()) {
+            root->is_terminal = true;
+            root->terminal_result = winner;
+        }
+        
+        auto start_time = chrono::steady_clock::now();
+        while (chrono::duration<double>(chrono::steady_clock::now() - start_time).count() < TIME_LIMIT_SECONDS) {
+            Node* leaf = mcts_select_init_node(root.get());
+            
+            if (leaf->is_terminal) {
+                double result = (leaf->terminal_result == this->side) ? 1.0 : (leaf->terminal_result.empty() ? 0.5 : 0.0);
+                backpropagate(leaf, result);
+            } else {
+                Node* child = mcts_expand_node(leaf, score_cols);
+                if (child && child != leaf) {
+                    double result = simulate_playout(child, score_cols);
+                    backpropagate(child, result);
+                } else if (!leaf->is_fully_expanded) {
+                    double result = simulate_playout(leaf, score_cols);
+                    backpropagate(leaf, result);
+                }
+            }
+        }
+
+        if (root->children.empty()) {
+            // cout << "random move" << endl;
+            return root_moves[0];
+        }
+
+        auto moves_equal = [&](const Move &a, const Move &b) -> bool {
+            return a.action == b.action
+                && a.orientation == b.orientation
+                && a.from == b.from
+                && a.to == b.to
+                && a.pushed_to == b.pushed_to;
+        };
+
+
+        Node* best_child = nullptr;
+        double best_win_rate = -1.0;
+
+        for (const auto& child : root->children) {
+            if (child->playouts > 0) {
+                double win_rate = (double)child->wins / (double)child->playouts;
+                if (win_rate > best_win_rate) {
+                    best_win_rate = win_rate;
+                    best_child = child.get();
+                }
+            }
+        }
+        
+        if (best_child == nullptr) {
+            int max_playouts = -1;
+            for (const auto& child : root->children) {
+                if (child->playouts > max_playouts) {
+                    max_playouts = child->playouts;
+                    best_child = child.get();
+                }
+            }
+        }
+
+        if (best_child != nullptr) {
+            bool legal = false;
+            for (const auto &rm : root_moves) {
+                if (moves_equal(best_child->move, rm)) {
+                    legal = true;
+                    break;
+                }
+            }
+            if (legal) {
+                return best_child->move;
+            } else {
+
+                Node* alt_child = nullptr;
+                int alt_playouts = -1;
+                for (const auto& child : root->children) {
+                    for (const auto &rm : root_moves) {
+                        if (moves_equal(child->move, rm)) {
+                            if (child->playouts > alt_playouts) {
+                                alt_playouts = child->playouts;
+                                alt_child = child.get();
+                            }
+                            break;
+                        }
+                    }
+                }
+                if (alt_child != nullptr) return alt_child->move;
+            }
+        }
+
+        return root_moves[0];
+    }
+
+
+    Move choose(const BoardState& board, int, int, const vector<int>& score_cols, float, float) {
+        turn_count++;
+        board_rows = board.size();
+        if (board.empty()) return {};
+        board_cols = board[0].size();
+
+        if (turn_count <= 12) {
+            // cout<<"opening"<<endl;
+            return get_opening_move();
+        }
+        if (auto flip_move = find_immediate_flip_in_scoring_area(board, score_cols)) {
+            // cout<<"flip"<<endl;
+
+            return *flip_move;
+        }
+        if (optional<Move> enter_move = find_direct_entry_path(board, score_cols)) {
+            // cout << "from " << (*enter_move).from[0] << "," << (*enter_move).from[1] << endl;
+            // cout << "to " << (*enter_move).to[0] << "," << (*enter_move).to[1] << endl;
+            // cout << "pushed to " << (*enter_move).pushed_to[0] << "," << (*enter_move).pushed_to[1] << endl;
+            // cout << "ori " << (*enter_move).orientation << endl;
+            // cout<<"enter_move"<<endl;
+
+            return *enter_move;
+        }
+        if (auto win_move = find_immediate_win(board, score_cols)) {
+                    // cout<<"win_move"<<endl;
+
+            return *win_move;
+        }
+        if (auto block_move = block_opponent_win(board, score_cols)) {
+                    // cout<<"block_opp"<<endl;
+
+            return *block_move;
+        }
+
+        // cout<<"mcts"<<endl;
+        // print_board(board);
+        Move m_Ret = find_mcts_move(board, score_cols);
+        // cout << "MCTS chose: " << m_Ret.action << " from (" << m_Ret.from[1] << "," << m_Ret.from[0] << ") to (" << m_Ret.to[1] << "," << m_Ret.to[0] << ") pushed_to (" << (m_Ret.pushed_to.empty() ? -1 : m_Ret.pushed_to[1]) << "," << (m_Ret.pushed_to.empty() ? -1 : m_Ret.pushed_to[0]) << ") orientation " << m_Ret.orientation << endl;
+        return m_Ret;
+    }
+
 };
 
 StudentAgent::StudentAgent(string s) : side(move(s)), gen(rd()) {
     opponent_side = (side == "circle") ? "square" : "circle";
 }
-
 
 void print_board(const BoardState& board) {
     for (int y = 0; y < board.size(); ++y) {
@@ -766,233 +1021,9 @@ void print_board(const BoardState& board) {
     }
 }
 
-
-int x;
-Move StudentAgent::choose(const BoardState& board, int, int, const vector<int>& score_cols, float, float) {
-    x=0;
-    turn_count++;
-    board_rows = board.size();
-    if (board.empty()) return {};
-    board_cols = board[0].size();
-
-    if (turn_count <= 12) {
-        // cout<<"opening"<<endl;
-        return get_opening_move();
-    }
-    if (auto flip_move = find_immediate_flip_in_scoring_area(board, score_cols)) {
-        // cout<<"flip"<<endl;
-
-        return *flip_move;
-    }
-    if (optional<Move> enter_move = find_direct_entry_path(board, score_cols)) {
-        // cout << "from " << (*enter_move).from[0] << "," << (*enter_move).from[1] << endl;
-        // cout << "to " << (*enter_move).to[0] << "," << (*enter_move).to[1] << endl;
-        // cout << "pushed to " << (*enter_move).pushed_to[0] << "," << (*enter_move).pushed_to[1] << endl;
-        // cout << "ori " << (*enter_move).orientation << endl;
-        // cout<<"enter_move"<<endl;
-
-        return *enter_move;
-    }
-    if (auto win_move = find_immediate_win(board, score_cols)) {
-                // cout<<"win_move"<<endl;
-
-        return *win_move;
-    }
-    if (auto block_move = block_opponent_win(board, score_cols)) {
-                // cout<<"block_opp"<<endl;
-
-        return *block_move;
-    }
-
-    // cout<<"mcts"<<endl;
-    // print_board(board);
-    Move m_Ret = find_mcts_move(board, score_cols);
-    // cout << "MCTS chose: " << m_Ret.action << " from (" << m_Ret.from[1] << "," << m_Ret.from[0] << ") to (" << m_Ret.to[1] << "," << m_Ret.to[0] << ") pushed_to (" << (m_Ret.pushed_to.empty() ? -1 : m_Ret.pushed_to[1]) << "," << (m_Ret.pushed_to.empty() ? -1 : m_Ret.pushed_to[0]) << ") orientation " << m_Ret.orientation << endl;
-    return m_Ret;
-}
-
-//  MANUAL CHANGE 4
-
-Move StudentAgent::get_opening_move() {
-    if (side == "circle") {
-        if (turn_count == 1) return {"push", {3, 8}, {3, 9}, {3,10}, ""}; 
-        if (turn_count == 2) return {"push", {3, 9}, {3, 10}, {3,11}, ""};
-        if (turn_count == 3) return {"push", {8, 8}, {8, 9}, {8,10}, ""};
-        if (turn_count == 4) return {"push", {8, 9}, {8, 10}, {8,11}, ""};  
-        if (turn_count == 5) return {"flip", {3, 10}, {3, 10}, {}, "vertical"}; 
-        if (turn_count == 6) return {"flip", {8, 10}, {8, 10}, {}, "vertical"};
-        if (turn_count == 7) return {"flip", {4, 9}, {4, 9}, {}, "horizontal"}; 
-        if (turn_count == 8) return {"flip", {5, 9}, {5, 9}, {}, "horizontal"};
-        if (turn_count == 9) return {"flip", {6, 9}, {6, 9}, {}, "horizontal"}; 
-        if (turn_count == 10) return {"flip", {7, 9}, {7, 9}, {}, "horizontal"};
-        if (turn_count == 11) return {"flip", {3, 11}, {3, 11}, {}, "vertical"}; 
-        if (turn_count == 12) return {"flip", {8, 11}, {8, 11}, {}, "vertical"};
-    } else {
-        if (turn_count == 1) return {"push", {3, 4}, {3, 3}, {3, 2}, ""};
-        if (turn_count == 2) return {"push", {3, 3}, {3, 2}, {3, 1}, ""};
-        if (turn_count == 3) return {"push", {8, 4}, {8, 3}, {8, 2}, ""};
-        if (turn_count == 4) return {"push", {8, 3}, {8, 2}, {8, 1}, ""};
-        if (turn_count == 5) return {"flip", {3, 2}, {3, 2}, {}, "vertical"};
-        if (turn_count == 6) return {"flip", {8, 2}, {8, 2}, {}, "vertical"};
-        if (turn_count == 7) return {"flip", {4, 3}, {4, 3}, {}, "horizontal"}; 
-        if (turn_count == 8) return {"flip", {5, 3}, {5, 3}, {}, "horizontal"};
-        if (turn_count == 9) return {"flip", {6, 3}, {6, 3}, {}, "horizontal"}; 
-        if (turn_count == 10) return {"flip", {7, 3}, {7, 3}, {}, "horizontal"};
-        if (turn_count == 11) return {"flip", {3, 1}, {3, 1}, {}, "vertical"}; 
-        if (turn_count == 12) return {"flip", {8, 1}, {8, 1}, {}, "vertical"};
-    }
-    return {};
-}
-
-optional<Move> StudentAgent::find_immediate_win(const BoardState& board, const vector<int>& score_cols) {
-    auto moves = get_all_moves(board, side, score_cols);
-    for (const auto& move : moves) {
-        BoardState next_state = try_move(board, move, score_cols);
-        if (check_if_won(next_state, score_cols) == side) {
-            return move;
-        }
-    }
-    return nullopt;
-}
-
-optional<Move> StudentAgent::block_opponent_win(const BoardState& board, const vector<int>& score_cols) {
-    auto opponent_moves = get_all_moves(board, opponent_side, score_cols);
-    for (const auto& opp_move : opponent_moves) {
-        BoardState next_state = try_move(board, opp_move, score_cols);
-        if (check_if_won(next_state, score_cols) == opponent_side) {
-            vector<int> target_square = opp_move.action == "move" ? opp_move.to : opp_move.pushed_to;
-            if (target_square.empty()) continue;
-
-            auto my_moves = get_all_moves(board, side, score_cols);
-            for (const auto& my_move : my_moves) {
-                vector<int> my_target = my_move.action == "move" ? my_move.to : my_move.pushed_to;
-                if (my_target == target_square) {
-                    return my_move;
-                }
-            }
-        }
-    }
-    return nullopt;
-}
-
-
-
-
-Move StudentAgent::find_mcts_move(const BoardState& board, const vector<int>& score_cols) {
-    auto root_moves = get_all_moves(board, this->side, score_cols);
-    // cout << root_moves.size() << " possible moves" << endl;
-    if (root_moves.empty()) return {};
-    
-    auto root = make_unique<Node>();
-    root->state = board;
-    root->pid = this->side;
-    root->untried_moves = root_moves;
-    shuffle(root->untried_moves.begin(), root->untried_moves.end(), gen);
-    
-    string winner = check_if_won(board, score_cols);
-    if (!winner.empty()) {
-        root->is_terminal = true;
-        root->terminal_result = winner;
-    }
-    
-    auto start_time = chrono::steady_clock::now();
-    while (chrono::duration<double>(chrono::steady_clock::now() - start_time).count() < TIME_LIMIT_SECONDS) {
-        Node* leaf = mcts_select_init_node(root.get());
-        
-        if (leaf->is_terminal) {
-            double result = (leaf->terminal_result == this->side) ? 1.0 : (leaf->terminal_result.empty() ? 0.5 : 0.0);
-            backpropagate(leaf, result);
-        } else {
-            Node* child = mcts_expand_node(leaf, score_cols);
-            if (child && child != leaf) {
-                double result = simulate_playout(child, score_cols);
-                backpropagate(child, result);
-            } else if (!leaf->is_fully_expanded) {
-                double result = simulate_playout(leaf, score_cols);
-                backpropagate(leaf, result);
-            }
-        }
-    }
-
-    if (root->children.empty()) {
-        // cout << "random move" << endl;
-        return root_moves[0];
-    }
-
-    auto moves_equal = [&](const Move &a, const Move &b) -> bool {
-        return a.action == b.action
-            && a.orientation == b.orientation
-            && a.from == b.from
-            && a.to == b.to
-            && a.pushed_to == b.pushed_to;
-    };
-
-
-    Node* best_child = nullptr;
-    double best_win_rate = -1.0;
-
-    for (const auto& child : root->children) {
-        if (child->playouts > 0) {
-            double win_rate = (double)child->wins / (double)child->playouts;
-            if (win_rate > best_win_rate) {
-                best_win_rate = win_rate;
-                best_child = child.get();
-            }
-        }
-    }
-    
-    if (best_child == nullptr) {
-        int max_playouts = -1;
-        for (const auto& child : root->children) {
-            if (child->playouts > max_playouts) {
-                max_playouts = child->playouts;
-                best_child = child.get();
-            }
-        }
-    }
-
-    if (best_child != nullptr) {
-        bool legal = false;
-        for (const auto &rm : root_moves) {
-            if (moves_equal(best_child->move, rm)) {
-                legal = true;
-                break;
-            }
-        }
-        if (legal) {
-            return best_child->move;
-        } else {
-
-            Node* alt_child = nullptr;
-            int alt_playouts = -1;
-            for (const auto& child : root->children) {
-                for (const auto &rm : root_moves) {
-                    if (moves_equal(child->move, rm)) {
-                        if (child->playouts > alt_playouts) {
-                            alt_playouts = child->playouts;
-                            alt_child = child.get();
-                        }
-                        break;
-                    }
-                }
-            }
-            if (alt_child != nullptr) return alt_child->move;
-        }
-    }
-
-    return root_moves[0];
-}
-
-
 string flip(string ori) {
     return (ori=="horizontal") ? "vertical" :  ori;
 }
-
-
-
-
-
-
 
 PYBIND11_MODULE(student_agent_module, m) {
     py::class_<Move>(m, "Move")
