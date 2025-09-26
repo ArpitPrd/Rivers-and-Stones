@@ -58,7 +58,7 @@ private:
     int board_cols = 13;
 
     // MANUAL CHANGE 6
-    const double TIME_LIMIT_SECONDS = 0.1; 
+    const double time_limit = 0.1; 
     const double UCT_C = 1.414;
     int turn_count = 0;
     
@@ -764,17 +764,30 @@ public:
             if (node->terminal_result.empty()) return 0.5;
             return 0.0;
         }
+        int limit_at = 30;
+        
         BoardState current_state = node->state;
         string current_player = node->pid;
-        int moves_limit = 30;
-        while (moves_limit-- > 0) {
+        
+        while (limit_at > 0) {
+
+            limit_at -= 1;
             string winner = check_if_won(current_state, score_cols);
+
+
             if (!winner.empty()) return (winner == this->side) ? 1.0 : 0.0;
+            
+            
             auto moves = get_all_moves(current_state, current_player, score_cols);
             if (moves.empty()) return 0.5;
             Move move_to_play = find_playout_move(moves, current_state, current_player, score_cols);
             current_state = try_move(current_state, move_to_play, score_cols);
-            current_player = (current_player == "circle") ? "square" : "circle";
+            if (current_player == "circle") {
+                current_player = "square";
+            }
+            else {
+                current_player = "circle";
+            }
         }
         return evaluate_position(current_state, this->side, score_cols);
     }
@@ -846,6 +859,10 @@ public:
     }
 
 
+    bool is_equal_move(const Move &a, const Move &b){
+        return a.action == b.action && a.orientation == b.orientation && a.from == b.from && a.to == b.to && a.pushed_to == b.pushed_to;
+    };
+
     Move find_mcts_move(const BoardState& board, const vector<int>& score_cols) {
         auto root_moves = get_all_moves(board, this->side, score_cols);
         // cout << root_moves.size() << " possible moves" << endl;
@@ -864,18 +881,31 @@ public:
         }
         
         auto start_time = chrono::steady_clock::now();
-        while (chrono::duration<double>(chrono::steady_clock::now() - start_time).count() < TIME_LIMIT_SECONDS) {
+        while (chrono::duration<double>(chrono::steady_clock::now() - start_time).count() < time_limit) {
             Node* leaf = mcts_select_init_node(root.get());
             
             if (leaf->is_terminal) {
-                double result = (leaf->terminal_result == this->side) ? 1.0 : (leaf->terminal_result.empty() ? 0.5 : 0.0);
+                double result;
+                if (leaf->terminal_result == this->side) {
+                    result = 1.0;
+                }
+                else {
+                    if (leaf->terminal_result.empty()) {
+                        result = 0.5; // drawing this stuff dude
+                    }
+                    else {
+                        result = 0.0;
+                    } 
+                }
                 backpropagate(leaf, result);
-            } else {
+            } 
+            else {
                 Node* child = mcts_expand_node(leaf, score_cols);
                 if (child && child != leaf) {
                     double result = simulate_playout(child, score_cols);
                     backpropagate(child, result);
-                } else if (!leaf->is_fully_expanded) {
+                } 
+                else if (!leaf->is_fully_expanded) {
                     double result = simulate_playout(leaf, score_cols);
                     backpropagate(leaf, result);
                 }
@@ -886,14 +916,6 @@ public:
             // cout << "random move" << endl;
             return root_moves[0];
         }
-
-        auto moves_equal = [&](const Move &a, const Move &b) -> bool {
-            return a.action == b.action
-                && a.orientation == b.orientation
-                && a.from == b.from
-                && a.to == b.to
-                && a.pushed_to == b.pushed_to;
-        };
 
 
         Node* best_child = nullptr;
@@ -919,32 +941,33 @@ public:
             }
         }
 
-        if (best_child != nullptr) {
-            bool legal = false;
+        else {
+            bool is_legal_move = false;
             for (const auto &rm : root_moves) {
-                if (moves_equal(best_child->move, rm)) {
-                    legal = true;
+                if (is_equal_move(best_child->move, rm)) {
+                    is_legal_move = true;
                     break;
                 }
             }
-            if (legal) {
+            if (is_legal_move) {
                 return best_child->move;
-            } else {
+            } 
+            else {
 
-                Node* alt_child = nullptr;
-                int alt_playouts = -1;
+                Node* other_child = nullptr;
+                int other_pl = -1;
                 for (const auto& child : root->children) {
                     for (const auto &rm : root_moves) {
-                        if (moves_equal(child->move, rm)) {
-                            if (child->playouts > alt_playouts) {
-                                alt_playouts = child->playouts;
-                                alt_child = child.get();
+                        if (is_equal_move(child->move, rm)) {
+                            if (child->playouts > other_pl) {
+                                other_pl = child->playouts;
+                                other_child = child.get();
                             }
                             break;
                         }
                     }
                 }
-                if (alt_child != nullptr) return alt_child->move;
+                if (other_child != nullptr) return other_child->move;
             }
         }
 
