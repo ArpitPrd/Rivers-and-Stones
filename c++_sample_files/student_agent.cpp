@@ -61,18 +61,9 @@ private:
     const double TIME_LIMIT_SECONDS = 0.1; 
     const double UCT_C = 1.414;
     int turn_count = 0;
-
-    bool is_inside_board(int x, int y) const;
-    bool present_in_scoring(int x, int y, const string& pid, const vector<int>& score_cols) const;
-    void identify_river_motion(vector<Move>& moves, const BoardState& board, int start_x, int start_y, int curr_x, int curr_y, const string& pid, const vector<int>& score_cols, set<pair<int, int>>& visited) const;
-    void find_river_moves(vector<Move>& moves, const BoardState& board, int start_x, int start_y, int curr_x, int curr_y, const string& pid, const vector<int>& score_cols) const;
-    vector<Move> get_all_moves(const BoardState& board, const string& pid, const vector<int>& score_cols) const;
-    BoardState try_move(const BoardState& board, const Move& move, const vector<int>& score_cols) const;
-    string check_if_won(const BoardState& board, const vector<int>& score_cols) const;
-    optional<Move> find_direct_entry_path(const BoardState& board, const vector<int>& score_cols);
-    double evaluate_position(const BoardState& board, const string& pid, const vector<int>& score_cols) const;
-    int count_pieces_in_score_area(const BoardState& board, const string& pid, const vector<int>& score_cols) const;
-    int count_pieces_near_score_area(const BoardState& board, const string& pid, const vector<int>& score_cols) const;
+    
+    // int count_pieces_in_score_area(const BoardState& board, const string& pid, const vector<int>& score_cols) const;
+    // int count_pieces_near_score_area(const BoardState& board, const string& pid, const vector<int>& score_cols) const;
 
     Node* mcts_select_init_node(Node* root);
     Node* mcts_expand_node(Node* node, const vector<int>& score_cols);
@@ -84,171 +75,509 @@ private:
     optional<Move> find_immediate_win(const BoardState& board, const vector<int>& score_cols);
     optional<Move> block_opponent_win(const BoardState& board, const vector<int>& score_cols);
     Move find_mcts_move(const BoardState& board, const vector<int>& score_cols);
-    optional<Move> find_immediate_flip_in_scoring_area(const BoardState& board, const vector<int>& score_cols);
 
 
 public:
     explicit StudentAgent(string s); 
     Move choose(const BoardState& board, int, int, const vector<int>& score_cols, float, float); 
-};
 
-StudentAgent::StudentAgent(string s) : side(move(s)), gen(rd()) {
-    opponent_side = (side == "circle") ? "square" : "circle";
-}
 
-optional<Move> StudentAgent::find_immediate_flip_in_scoring_area(
-    const BoardState& board, const vector<int>& score_cols) 
-{
-    for (int y = 0; y < board_rows; ++y) {
-        for (int x = 0; x < board_cols; ++x) {
-            if (!board[y][x].empty() && 
-                get_key(board[y][x], "owner") == this->side &&
-                get_key(board[y][x], "side") == "river" && 
-                present_in_scoring(x, y, this->side, score_cols)) 
-            {
-                return Move{"flip", {x, y}, {x, y}, {}, ""};
+    bool is_inside_board(int x, int y) const {
+        return x >= 0 && x < board_cols && y >= 0 && y < board_rows;
+    }
+
+    bool present_in_scoring(int x, int y, const string& pid, const vector<int>& score_cols) const {
+        if (!is_inside_board(x,y) || score_cols.empty()) return false;
+        bool in_score_row = (pid == "circle") ? (y == 2) : (y == board_rows - 3);
+        return in_score_row && find(score_cols.begin(), score_cols.end(), x) != score_cols.end();
+    }
+
+    void identify_river_motion(vector<Move>& moves, const BoardState& board, int start_x, int start_y, int curr_x, int curr_y, const string& pid, const vector<int>& score_cols, set<pair<int, int>>& visited) const {
+        if (!is_inside_board(curr_x, curr_y) || present_in_scoring(curr_x, curr_y, (pid == side) ? opponent_side : side, score_cols)) return;
+        visited.insert({curr_x, curr_y});
+        const auto& cell = board[curr_y][curr_x];
+        if (cell.empty() || get_key(cell, "side") != "river") return;
+        
+        string current_orientation = get_key(cell, "orientation");
+        int dx = (current_orientation == "horizontal") ? 1 : 0;
+        int dy = (current_orientation == "vertical") ? 1 : 0;
+        
+        for (int dir = -1; dir <= 1; dir += 2) {
+            int next_x = curr_x + (dx * dir), next_y = curr_y + (dy * dir);
+            while (is_inside_board(next_x, next_y)) {
+                if (present_in_scoring(next_x, next_y, (pid == side) ? opponent_side : side, score_cols)) break;
+                const auto& next_cell = board[next_y][next_x];
+                if (next_cell.empty()) {
+                    moves.push_back({"move", {start_x, start_y}, {next_x, next_y}, {}, ""});
+                } else if (get_key(next_cell, "side") == "river") {
+                    if (get_key(next_cell, "orientation") == current_orientation && visited.find({next_x, next_y}) == visited.end()) {
+                        identify_river_motion(moves, board, start_x, start_y, next_x, next_y, pid, score_cols, visited);
+                    }
+                    break;
+                } else {
+                    break;
+                }
+                next_x += (dx * dir);
+                next_y += (dy * dir);
             }
         }
     }
-    return nullopt;
-}
 
-optional<Move> StudentAgent::find_direct_entry_path(
-    const BoardState& board, const vector<int>& score_cols) 
-{
-    auto moves = get_all_moves(board, side, score_cols);
-    if (moves.empty()) return nullopt;
-
-    int scoring_row = (side == "circle") ? 2 : board_rows - 3;
-
-    vector<int> gap_cols;
-    for (int sx : score_cols) {
-        if (is_inside_board(sx, scoring_row) && board[scoring_row][sx].empty()) {
-            gap_cols.push_back(sx);
-        }
+    void find_river_moves(vector<Move>& moves, const BoardState& board, int start_x, int start_y, int curr_x, int curr_y, const string& pid, const vector<int>& score_cols) const {
+        set<pair<int, int>> visited;
+        identify_river_motion(moves, board, start_x, start_y, curr_x, curr_y, pid, score_cols, visited);
     }
 
-    auto dist_to_closest_gap = [&](int px, int py) {
-        int min_dist = numeric_limits<int>::max();
-        for (int gx : gap_cols) {
-            min_dist = min(min_dist, abs(px - gx) + abs(py - scoring_row));
-        }
-        return min_dist;
-    };
+    vector<Move> get_all_moves(const BoardState& board, const string& pid, const vector<int>& score_cols) const {
+        vector<Move> moves;
+        vector<pair<int, int>> dirs = {{0, 1}, {0, -1}, {1, 0}, {-1, 0}};
+        string current_opponent_side = (pid == this->side) ? this->opponent_side : this->side;
 
-    auto is_valid_move = [&](const Move& move) -> bool {
-        if (move.from.size() < 2 || move.to.size() < 2) return false;
+        set<pair<int, int>> fixed_positions;
+        set<pair<int, int>> conditionally_fixed_positions;
 
-        int fx = move.from[0], fy = move.from[1];
-        int tx = move.to[0], ty = move.to[1];
-
-        if (!is_inside_board(fx, fy) || !is_inside_board(tx, ty)) return false;
-
-        if (board[fy][fx].empty() || get_key(board[fy][fx], "owner") != side) return false;
-
-        auto sgn = [](int v) { return (v > 0) - (v < 0); };
-
-        if (move.action == "move") {
-            if (!board[ty][tx].empty()) return false;
-
-            BoardState next = try_move(board, move, score_cols);
-            return !next[ty][tx].empty() && get_key(next[ty][tx], "owner") == side;
+        if (pid == "circle") {
+            fixed_positions = {{3, 10}, {3, 11}, {8, 10}, {8, 11}};
+            conditionally_fixed_positions = {{4, 9}, {5, 9}, {6, 9}, {7, 9}};
+        } else {
+            fixed_positions = {{3, 2}, {3, 1}, {8, 2}, {8, 1}};
+            conditionally_fixed_positions = {{4, 3}, {5, 3}, {6, 3}, {7, 3}};
         }
 
-        if (move.action == "push") {
-            // cout << "push" << endl;
-            if (move.pushed_to.size() < 2) return false;
-            int px = move.pushed_to[0], py = move.pushed_to[1];
+        for (int y = 0; y < board_rows; ++y) {
+            for (int x = 0; x < board_cols; ++x) {
+                const auto& cell = board[y][x];
+                if (cell.empty() || get_key(cell, "owner") != pid) continue;
 
-            if (!is_inside_board(px, py)) return false;
+                string piece_side = get_key(cell, "side");
 
-            string piece_type = get_key(board[fy][fx], "type");  
-
-            if (piece_type == "stone") {
-                int dx = tx - fx, dy = ty - fy;
-                if (abs(dx) + abs(dy) != 1) return false;
-
-                if (board[ty][tx].empty()) return false;
-
-                if (!is_inside_board(px, py)) return false;
-                if (!board[py][px].empty()) return false;
-
-                BoardState next = try_move(board, move, score_cols);
-
-                if (next[ty][tx].empty() || get_key(next[ty][tx], "owner") != side) return false;
-                if (next[py][px].empty()) return false;
-
-                return true;
-            }
+                if (fixed_positions.count({x, y})) {
 
 
-            if (piece_type == "river") {
+                    // MANUAL CHANGE 2;
 
-                if (board[ty][tx].empty() || get_key(board[ty][tx], "type") != "stone")
-                    return false;
-
-                int dx = (px - tx == 0) ? 0 : (px - tx) / abs(px - tx);
-                int dy = (py - ty == 0) ? 0 : (py - ty) / abs(py - ty);
-
-
-                if (dx != 0 && dy != 0) return false;
-
-
-                int steps = max(abs(px - tx), abs(py - ty));
-                if (steps < 1) return false;
-                for (int i = 1; i <= steps; i++) {
-                    int cx = tx + dx * i;
-                    int cy = ty + dy * i;
-                    if (!is_inside_board(cx, cy)) return false;
-                    if (i < steps && !board[cy][cx].empty()) return false; 
+                    // if (piece_side == "stone") {
+                    //     moves.push_back({"flip", {x, y}, {x, y}, {}, "horizontal"});
+                    //     moves.push_back({"flip", {x, y}, {x, y}, {}, "vertical"});
+                    // } else {
+                    //     moves.push_back({"flip", {x, y}, {x, y}, {}, ""});
+                    //     moves.push_back({"rotate", {x, y}, {x, y}, {}, flip(get_key(cell, "orientation"))});
+                    // }
+                    continue;
                 }
 
-                BoardState next = try_move(board, move, score_cols);
+                if (conditionally_fixed_positions.count({x, y})) {
 
-                if (next[ty][tx].empty() || get_key(next[ty][tx], "type") != "stone") return false;
-                if (get_key(next[ty][tx], "owner") != side) return false;
+                    // MANUAL CHANGE 3
+
+                    // vector<Move> scoring_moves;
+                    // for (auto const& [dx, dy] : dirs) {
+                    //     int nx = x + dx, ny = y + dy;
+                    //     if(is_inside_board(nx, ny) && board[ny][nx].empty() && present_in_scoring(nx, ny, pid, score_cols) && !present_in_scoring(nx, ny, current_opponent_side, score_cols)){
+                    //        scoring_moves.push_back({"move", {x, y}, {nx, ny}, {}, ""});
+                    //     }
+                    // }
+
+                    // if(!scoring_moves.empty()){
+                    //     moves.insert(moves.end(), scoring_moves.begin(), scoring_moves.end());
+                    // } else { 
+                    //     if (piece_side == "stone") {
+                    //        moves.push_back({"flip", {x, y}, {x, y}, {}, "horizontal"});
+                    //        moves.push_back({"flip", {x, y}, {x, y}, {}, "vertical"});
+                    //     } else {
+                    //        moves.push_back({"flip", {x, y}, {x, y}, {}, ""});
+                    //        moves.push_back({"rotate", {x, y}, {x, y}, {}, ""});
+                    //     }
+                    // }
+                    continue;
+                }
+                
+                // moves for those peices that are already in the scoring area
+                // flip if river
+                // if stone move horizontally making sure it is in score area for me, not in opps score and board is empty 
+                if (present_in_scoring(x, y, pid, score_cols)) {
+                    if (piece_side == "river") {
+                        moves.push_back({"flip", {x, y}, {x, y}, {}, ""});
+                    } else if (piece_side == "stone") {
+                        for (int dx : {-1, 1}) {
+                            int nx = x + dx;
+                            if (is_inside_board(nx, y) && present_in_scoring(nx, y, pid, score_cols) && !present_in_scoring(nx, y, current_opponent_side, score_cols) && board[y][nx].empty()) {
+                                moves.push_back({"move", {x, y}, {nx, y}, {}, ""});
+                            }
+                        }
+                    }
+                    continue;
+                }
+
+                // does the river flow movements
+                // ignores a new pos if 
+                /*
+                    not in valid boaard pos or is gonna enter opps score area or is already in my score area dont move
+                */
+                for (auto const& [dx, dy] : dirs) {
+                    int nx = x + dx, ny = y + dy;
 
 
-                if (next[py][px].empty() || get_key(next[py][px], "type") != "stone") return false;
+                    // MANUAL CHANGE 1
+
+                    if (!is_inside_board(nx, ny) || present_in_scoring(nx, ny, current_opponent_side, score_cols) || present_in_scoring(nx, ny, pid, score_cols)) continue;
+                    // if (!is_inside_board(nx, ny) || present_in_scoring(nx, ny, current_opponent_side, score_cols)) continue;
+                    
+                    
+                    
+                    const auto& next_cell = board[ny][nx];
+                    // if (next_cell.empty()) moves.push_back({"move", {x, y}, {nx, ny}, {}, ""});
+                    if (get_key(next_cell, "side") == "river") find_river_moves(moves, board, x, y, nx, ny, pid, score_cols);
+                }
+
+                for (auto const& [dx, dy] : dirs) {
+                    int nx = x + dx, ny = y + dy;
 
 
+                    // MANUAL CHANGE 1
 
-                return true;
+                    // if (!is_inside_board(nx, ny) || present_in_scoring(nx, ny, current_opponent_side, score_cols) || present_in_scoring(nx, ny, pid, score_cols)) continue;
+                    if (!is_inside_board(nx, ny) || present_in_scoring(nx, ny, current_opponent_side, score_cols)) continue;
+                    
+                    
+                    
+                    const auto& next_cell = board[ny][nx];
+                    if (next_cell.empty()) moves.push_back({"move", {x, y}, {nx, ny}, {}, ""});
+                }
+
+                /*
+                now for push
+                we wanna check the following for the guy we wanna push
+                    if i am a stone:
+                        bro should not be a river
+                        bro should not be in opps scoring area
+                        bro in my scoring area cant help
+                        pushing area must be empty 
+                    if a river
+
+                */
+                for (auto const& [dx, dy] : dirs) {
+                    int nx = x + dx, ny = y + dy;
+                    if (
+                        !is_inside_board(nx, ny) || 
+                        board[ny][nx].empty() 
+                    ) {
+                            continue;
+                        }
+
+                    if (piece_side == "stone") {
+                        int nx2 = x + 2*dx, ny2 = y + 2*dy;
+                        if (
+                            is_inside_board(nx2, ny2) && 
+                            board[ny2][nx2].empty() && 
+                            !(get_key(board[ny][nx], "owner")==current_opponent_side) && present_in_scoring(nx2, ny2, pid, score_cols) &&
+                            !(get_key(board[ny][nx], "owner")==current_opponent_side) && present_in_scoring(nx2, ny2, current_opponent_side, score_cols) &&
+                            !(get_key(board[ny][nx], "owner")==pid) && present_in_scoring(nx2, ny2, current_opponent_side, score_cols)
+                        ){
+                            moves.push_back({"push", {x, y}, {nx, ny}, {nx2, ny2}, ""});
+                        }
+                    } else {
+                        if (get_key(board[ny][nx], "side") == "stone") {
+                            string orientation = get_key(cell, "orientation");
+                            int push_dx = (orientation == "horizontal") ? 1 : 0, push_dy = (orientation == "vertical") ? 1 : 0;
+                            for (int dir = -1; dir <= 1; dir += 2) {
+                                int cur_px = nx + push_dx * dir, cur_py = ny + push_dy * dir;
+                                while(is_inside_board(cur_px, cur_py)) {
+                                    if ( (get_key(board[ny][nx], "owner")==current_opponent_side) && present_in_scoring(cur_px, cur_py, pid, score_cols)) break;
+                                    if ( (get_key(board[ny][nx], "owner")==current_opponent_side) && present_in_scoring(cur_px, cur_py, current_opponent_side, score_cols)) break;
+                                    if ( (get_key(board[ny][nx], "owner")==pid) && present_in_scoring(cur_px, cur_py, current_opponent_side, score_cols)) break;
+                                    if(board[cur_py][cur_px].empty()) moves.push_back({"push", {x, y}, {nx, ny}, {cur_px, cur_py}, ""});
+                                    else break;
+                                    cur_px += push_dx * dir; cur_py += push_dy * dir;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (piece_side == "stone") {
+                    moves.push_back({"flip", {x, y}, {x, y}, {}, "horizontal"});
+                    moves.push_back({"flip", {x, y}, {x, y}, {}, "vertical"});
+                } else {
+                    moves.push_back({"flip", {x, y}, {x, y}, {}, ""});
+                    moves.push_back({"rotate", {x, y}, {x, y}, {}, ""});
+                }
             }
-
-            return false;
         }
-
-
-        return false;
-    };
-
-
-
-    for (const auto& move : moves) {
-        if ((move.action != "move" && move.action != "push") ||
-            present_in_scoring(move.from[0], move.from[1], side, score_cols)) continue;
-
-        if (!is_valid_move(move)) continue;
-
-        int tx = move.to[0], ty = move.to[1];
-        if (present_in_scoring(tx, ty, side, score_cols)) return move;
+        return moves;
     }
 
-    if (!gap_cols.empty()) {
+
+    optional<Move> find_immediate_flip_in_scoring_area(const BoardState& board, const vector<int>& score_cols) {
+        for (int y = 0; y < board_rows; ++y) {
+            for (int x = 0; x < board_cols; ++x) {
+                if (!board[y][x].empty() && 
+                    get_key(board[y][x], "owner") == this->side &&
+                    get_key(board[y][x], "side") == "river" && 
+                    present_in_scoring(x, y, this->side, score_cols)) 
+                {
+                    return Move{"flip", {x, y}, {x, y}, {}, ""};
+                }
+            }
+        }
+        return nullopt;
+    }
+
+
+    BoardState try_move(const BoardState& board, const Move& move, const vector<int>& score_cols) const {
+        auto next_board = board;
+        if (move.from.size() < 2) return next_board;
+        int from_x = move.from[0], from_y = move.from[1];
+        if (!is_inside_board(from_x, from_y) || next_board[from_y][from_x].empty()) return next_board;
+
+        string owner = get_key(next_board[from_y][from_x], "owner");
+
+        if (move.action == "move") {
+            if (move.to.size() < 2) return next_board;
+            int to_x = move.to[0], to_y = move.to[1];
+            if (!is_inside_board(to_x, to_y)) return next_board;
+
+            next_board[to_y][to_x] = next_board[from_y][from_x];
+            next_board[from_y][from_x].clear();
+
+            if (present_in_scoring(to_x, to_y, owner, score_cols)) {
+                next_board[to_y][to_x]["side"] = "stone";
+                next_board[to_y][to_x].erase("orientation");
+            }
+
+        } else if (move.action == "push") {
+            if (move.to.size() < 2 || move.pushed_to.size() < 2) return next_board;
+            int to_x = move.to[0], to_y = move.to[1];
+            int p_x = move.pushed_to[0], p_y = move.pushed_to[1];
+            if (!is_inside_board(to_x, to_y) || !is_inside_board(p_x, p_y)) return next_board;
+
+            next_board[p_y][p_x] = next_board[to_y][to_x];
+            string pushed_owner = get_key(next_board[p_y][p_x], "owner");
+
+            if (present_in_scoring(p_x, p_y, pushed_owner, score_cols)) {
+                next_board[p_y][p_x]["side"] = "stone";
+                next_board[p_y][p_x].erase("orientation");
+            }
+
+            next_board[to_y][to_x] = next_board[from_y][from_x];
+
+            if (present_in_scoring(to_x, to_y, owner, score_cols)) {
+                next_board[to_y][to_x]["side"] = "stone";
+                next_board[to_y][to_x].erase("orientation");
+            }
+
+            next_board[from_y][from_x].clear();
+
+        } else if (move.action == "flip") {
+            auto& piece_to_flip = next_board[from_y][from_x];
+            if (get_key(piece_to_flip, "side") == "stone") {
+                piece_to_flip["side"] = "river";
+                piece_to_flip["orientation"] = move.orientation;
+            } else {
+                piece_to_flip["side"] = "stone";
+                piece_to_flip.erase("orientation");
+            }
+
+        } else if (move.action == "rotate") {
+            auto& piece_to_rotate = next_board[from_y][from_x];
+            piece_to_rotate["orientation"] = (get_key(piece_to_rotate, "orientation") == "horizontal") ? "vertical" : "horizontal";
+        }
+
+        return next_board;
+    }
+
+    string check_if_won(const BoardState& board, const vector<int>& score_cols) const {
+        if (count_pieces_in_score_area(board, "circle", score_cols) >= 4) {
+            // cout << "declare circle win" << endl;
+            return "circle";
+        }
+        if (count_pieces_in_score_area(board, "square", score_cols) >= 4) {
+            // cout << "declare square win" << endl;
+            return "square";
+        }
+        return "";
+    }
+
+
+
+    optional<Move> find_direct_entry_path(const BoardState& board, const vector<int>& score_cols) {
+        auto moves = get_all_moves(board, side, score_cols);
+        if (moves.empty()) return nullopt;
+
+        int scoring_row = (side == "circle") ? 2 : board_rows - 3;
+
+        vector<int> gap_cols;
+        for (int sx : score_cols) {
+            if (is_inside_board(sx, scoring_row) && board[scoring_row][sx].empty()) {
+                gap_cols.push_back(sx);
+            }
+        }
+
+        auto dist_to_closest_gap = [&](int px, int py) {
+            int min_dist = numeric_limits<int>::max();
+            for (int gx : gap_cols) {
+                min_dist = min(min_dist, abs(px - gx) + abs(py - scoring_row));
+            }
+            return min_dist;
+        };
+
+        auto is_valid_move = [&](const Move& move) -> bool {
+            if (move.from.size() < 2 || move.to.size() < 2) return false;
+
+            int fx = move.from[0], fy = move.from[1];
+            int tx = move.to[0], ty = move.to[1];
+
+            if (!is_inside_board(fx, fy) || !is_inside_board(tx, ty)) return false;
+
+            if (board[fy][fx].empty() || get_key(board[fy][fx], "owner") != side) return false;
+
+            auto sgn = [](int v) { return (v > 0) - (v < 0); };
+
+            if (move.action == "move") {
+                if (!board[ty][tx].empty()) return false;
+
+                BoardState next = try_move(board, move, score_cols);
+                return !next[ty][tx].empty() && get_key(next[ty][tx], "owner") == side;
+            }
+
+            if (move.action == "push") {
+                // cout << "push" << endl;
+                if (move.pushed_to.size() < 2) return false;
+                int px = move.pushed_to[0], py = move.pushed_to[1];
+
+                if (!is_inside_board(px, py)) return false;
+
+                string piece_type = get_key(board[fy][fx], "type");  
+
+                if (piece_type == "stone") {
+                    int dx = tx - fx, dy = ty - fy;
+                    if (abs(dx) + abs(dy) != 1) return false;
+
+                    if (board[ty][tx].empty()) return false;
+
+                    if (!is_inside_board(px, py)) return false;
+                    if (!board[py][px].empty()) return false;
+
+                    BoardState next = try_move(board, move, score_cols);
+
+                    if (next[ty][tx].empty() || get_key(next[ty][tx], "owner") != side) return false;
+                    if (next[py][px].empty()) return false;
+
+                    return true;
+                }
+
+
+                if (piece_type == "river") {
+
+                    if (board[ty][tx].empty() || get_key(board[ty][tx], "type") != "stone")
+                        return false;
+
+                    int dx = (px - tx == 0) ? 0 : (px - tx) / abs(px - tx);
+                    int dy = (py - ty == 0) ? 0 : (py - ty) / abs(py - ty);
+
+
+                    if (dx != 0 && dy != 0) return false;
+
+
+                    int steps = max(abs(px - tx), abs(py - ty));
+                    if (steps < 1) return false;
+                    for (int i = 1; i <= steps; i++) {
+                        int cx = tx + dx * i;
+                        int cy = ty + dy * i;
+                        if (!is_inside_board(cx, cy)) return false;
+                        if (i < steps && !board[cy][cx].empty()) return false; 
+                    }
+
+                    BoardState next = try_move(board, move, score_cols);
+
+                    if (next[ty][tx].empty() || get_key(next[ty][tx], "type") != "stone") return false;
+                    if (get_key(next[ty][tx], "owner") != side) return false;
+
+
+                    if (next[py][px].empty() || get_key(next[py][px], "type") != "stone") return false;
+
+
+
+                    return true;
+                }
+
+                return false;
+            }
+
+
+            return false;
+        };
+
+
+
         for (const auto& move : moves) {
             if ((move.action != "move" && move.action != "push") ||
                 present_in_scoring(move.from[0], move.from[1], side, score_cols)) continue;
 
             if (!is_valid_move(move)) continue;
 
-            int old_dist = dist_to_closest_gap(move.from[0], move.from[1]);
-            int new_dist = dist_to_closest_gap(move.to[0], move.to[1]);
-            if (new_dist < old_dist) return move;
+            int tx = move.to[0], ty = move.to[1];
+            if (present_in_scoring(tx, ty, side, score_cols)) return move;
         }
+
+        if (!gap_cols.empty()) {
+            for (const auto& move : moves) {
+                if ((move.action != "move" && move.action != "push") ||
+                    present_in_scoring(move.from[0], move.from[1], side, score_cols)) continue;
+
+                if (!is_valid_move(move)) continue;
+
+                int old_dist = dist_to_closest_gap(move.from[0], move.from[1]);
+                int new_dist = dist_to_closest_gap(move.to[0], move.to[1]);
+                if (new_dist < old_dist) return move;
+            }
+        }
+        // cout << "returning nullopt from enter scoring area" << endl;
+        return nullopt;
     }
-    // cout << "returning nullopt from enter scoring area" << endl;
-    return nullopt;
+
+    double evaluate_position(const BoardState& board, const string& pid, const vector<int>& score_cols) const {
+        int my_stones = count_pieces_in_score_area(board, pid, score_cols);
+        int opp_stones = count_pieces_in_score_area(board, (pid == "circle") ? "square" : "circle", score_cols);
+        int my_near = count_pieces_near_score_area(board, pid, score_cols);
+        int opp_near = count_pieces_near_score_area(board, (pid == "circle") ? "square" : "circle", score_cols);
+        double score = (my_stones * 10.0 + my_near * 2.0) - (opp_stones * 10.0 + opp_near * 2.0);
+        return 0.5 + (score / 100.0);
+    }
+
+
+    int count_pieces_in_score_area(const BoardState& board, const string& pid, const vector<int>& score_cols) const {
+        int count = 0;
+        for (int y = 0; y < board_rows; ++y) {
+            for (int x = 0; x < board_cols; ++x) {
+                if (!board[y][x].empty() && 
+                    get_key(board[y][x], "owner") == pid && 
+                    get_key(board[y][x], "side") == "stone" &&
+                    present_in_scoring(x, y, pid, score_cols)) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    int count_pieces_near_score_area(const BoardState& board, const string& pid, const vector<int>& score_cols) const {
+        int count = 0;
+        int target_y = (pid == "circle") ? 3 : board_rows - 4;
+        for (int x : score_cols) {
+            if (is_inside_board(x, target_y) && !board[target_y][x].empty() && 
+                get_key(board[target_y][x], "owner") == pid) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+
+};
+
+StudentAgent::StudentAgent(string s) : side(move(s)), gen(rd()) {
+    opponent_side = (side == "circle") ? "square" : "circle";
 }
 
 
@@ -382,41 +711,8 @@ optional<Move> StudentAgent::block_opponent_win(const BoardState& board, const v
     return nullopt;
 }
 
-double StudentAgent::evaluate_position(const BoardState& board, const string& pid, const vector<int>& score_cols) const {
-    int my_stones = count_pieces_in_score_area(board, pid, score_cols);
-    int opp_stones = count_pieces_in_score_area(board, (pid == "circle") ? "square" : "circle", score_cols);
-    int my_near = count_pieces_near_score_area(board, pid, score_cols);
-    int opp_near = count_pieces_near_score_area(board, (pid == "circle") ? "square" : "circle", score_cols);
-    double score = (my_stones * 10.0 + my_near * 2.0) - (opp_stones * 10.0 + opp_near * 2.0);
-    return 0.5 + (score / 100.0);
-}
 
-int StudentAgent::count_pieces_in_score_area(const BoardState& board, const string& pid, const vector<int>& score_cols) const {
-    int count = 0;
-    for (int y = 0; y < board_rows; ++y) {
-        for (int x = 0; x < board_cols; ++x) {
-            if (!board[y][x].empty() && 
-                get_key(board[y][x], "owner") == pid && 
-                get_key(board[y][x], "side") == "stone" &&
-                present_in_scoring(x, y, pid, score_cols)) {
-                count++;
-            }
-        }
-    }
-    return count;
-}
 
-int StudentAgent::count_pieces_near_score_area(const BoardState& board, const string& pid, const vector<int>& score_cols) const {
-    int count = 0;
-    int target_y = (pid == "circle") ? 3 : board_rows - 4;
-    for (int x : score_cols) {
-        if (is_inside_board(x, target_y) && !board[target_y][x].empty() && 
-            get_key(board[target_y][x], "owner") == pid) {
-            count++;
-        }
-    }
-    return count;
-}
 
 Move StudentAgent::find_mcts_move(const BoardState& board, const vector<int>& score_cols) {
     auto root_moves = get_all_moves(board, this->side, score_cols);
@@ -523,308 +819,11 @@ Move StudentAgent::find_mcts_move(const BoardState& board, const vector<int>& sc
     return root_moves[0];
 }
 
-bool StudentAgent::is_inside_board(int x, int y) const {
-    return x >= 0 && x < board_cols && y >= 0 && y < board_rows;
-}
-
-bool StudentAgent::present_in_scoring(int x, int y, const string& pid, const vector<int>& score_cols) const {
-    if (!is_inside_board(x,y) || score_cols.empty()) return false;
-    bool in_score_row = (pid == "circle") ? (y == 2) : (y == board_rows - 3);
-    return in_score_row && find(score_cols.begin(), score_cols.end(), x) != score_cols.end();
-}
-
-void StudentAgent::identify_river_motion(vector<Move>& moves, const BoardState& board, int start_x, int start_y, int curr_x, int curr_y, const string& pid, const vector<int>& score_cols, set<pair<int, int>>& visited) const {
-    if (!is_inside_board(curr_x, curr_y) || present_in_scoring(curr_x, curr_y, (pid == side) ? opponent_side : side, score_cols)) return;
-    visited.insert({curr_x, curr_y});
-    const auto& cell = board[curr_y][curr_x];
-    if (cell.empty() || get_key(cell, "side") != "river") return;
-    
-    string current_orientation = get_key(cell, "orientation");
-    int dx = (current_orientation == "horizontal") ? 1 : 0;
-    int dy = (current_orientation == "vertical") ? 1 : 0;
-    
-    for (int dir = -1; dir <= 1; dir += 2) {
-        int next_x = curr_x + (dx * dir), next_y = curr_y + (dy * dir);
-        while (is_inside_board(next_x, next_y)) {
-            if (present_in_scoring(next_x, next_y, (pid == side) ? opponent_side : side, score_cols)) break;
-            const auto& next_cell = board[next_y][next_x];
-            if (next_cell.empty()) {
-                moves.push_back({"move", {start_x, start_y}, {next_x, next_y}, {}, ""});
-            } else if (get_key(next_cell, "side") == "river") {
-                if (get_key(next_cell, "orientation") == current_orientation && visited.find({next_x, next_y}) == visited.end()) {
-                    identify_river_motion(moves, board, start_x, start_y, next_x, next_y, pid, score_cols, visited);
-                }
-                break;
-            } else {
-                break;
-            }
-            next_x += (dx * dir);
-            next_y += (dy * dir);
-        }
-    }
-}
-
-void StudentAgent::find_river_moves(vector<Move>& moves, const BoardState& board, int start_x, int start_y, int curr_x, int curr_y, const string& pid, const vector<int>& score_cols) const {
-    set<pair<int, int>> visited;
-    identify_river_motion(moves, board, start_x, start_y, curr_x, curr_y, pid, score_cols, visited);
-}
 
 string flip(string ori) {
     return (ori=="horizontal") ? "vertical" :  ori;
 }
 
-vector<Move> StudentAgent::get_all_moves(const BoardState& board, const string& pid, const vector<int>& score_cols) const {
-    vector<Move> moves;
-    vector<pair<int, int>> dirs = {{0, 1}, {0, -1}, {1, 0}, {-1, 0}};
-    string current_opponent_side = (pid == this->side) ? this->opponent_side : this->side;
-
-    set<pair<int, int>> fixed_positions;
-    set<pair<int, int>> conditionally_fixed_positions;
-
-    if (pid == "circle") {
-        fixed_positions = {{3, 10}, {3, 11}, {8, 10}, {8, 11}};
-        conditionally_fixed_positions = {{4, 9}, {5, 9}, {6, 9}, {7, 9}};
-    } else {
-        fixed_positions = {{3, 2}, {3, 1}, {8, 2}, {8, 1}};
-        conditionally_fixed_positions = {{4, 3}, {5, 3}, {6, 3}, {7, 3}};
-    }
-
-    for (int y = 0; y < board_rows; ++y) {
-        for (int x = 0; x < board_cols; ++x) {
-            const auto& cell = board[y][x];
-            if (cell.empty() || get_key(cell, "owner") != pid) continue;
-
-            string piece_side = get_key(cell, "side");
-
-            if (fixed_positions.count({x, y})) {
-
-
-                // MANUAL CHANGE 2;
-
-                // if (piece_side == "stone") {
-                //     moves.push_back({"flip", {x, y}, {x, y}, {}, "horizontal"});
-                //     moves.push_back({"flip", {x, y}, {x, y}, {}, "vertical"});
-                // } else {
-                //     moves.push_back({"flip", {x, y}, {x, y}, {}, ""});
-                //     moves.push_back({"rotate", {x, y}, {x, y}, {}, flip(get_key(cell, "orientation"))});
-                // }
-                continue;
-            }
-
-            if (conditionally_fixed_positions.count({x, y})) {
-
-                // MANUAL CHANGE 3
-
-                // vector<Move> scoring_moves;
-                // for (auto const& [dx, dy] : dirs) {
-                //     int nx = x + dx, ny = y + dy;
-                //     if(is_inside_board(nx, ny) && board[ny][nx].empty() && present_in_scoring(nx, ny, pid, score_cols) && !present_in_scoring(nx, ny, current_opponent_side, score_cols)){
-                //        scoring_moves.push_back({"move", {x, y}, {nx, ny}, {}, ""});
-                //     }
-                // }
-
-                // if(!scoring_moves.empty()){
-                //     moves.insert(moves.end(), scoring_moves.begin(), scoring_moves.end());
-                // } else { 
-                //     if (piece_side == "stone") {
-                //        moves.push_back({"flip", {x, y}, {x, y}, {}, "horizontal"});
-                //        moves.push_back({"flip", {x, y}, {x, y}, {}, "vertical"});
-                //     } else {
-                //        moves.push_back({"flip", {x, y}, {x, y}, {}, ""});
-                //        moves.push_back({"rotate", {x, y}, {x, y}, {}, ""});
-                //     }
-                // }
-                continue;
-            }
-            
-            // moves for those peices that are already in the scoring area
-            // flip if river
-            // if stone move horizontally making sure it is in score area for me, not in opps score and board is empty 
-            if (present_in_scoring(x, y, pid, score_cols)) {
-                if (piece_side == "river") {
-                    moves.push_back({"flip", {x, y}, {x, y}, {}, ""});
-                } else if (piece_side == "stone") {
-                    for (int dx : {-1, 1}) {
-                        int nx = x + dx;
-                        if (is_inside_board(nx, y) && present_in_scoring(nx, y, pid, score_cols) && !present_in_scoring(nx, y, current_opponent_side, score_cols) && board[y][nx].empty()) {
-                            moves.push_back({"move", {x, y}, {nx, y}, {}, ""});
-                        }
-                    }
-                }
-                continue;
-            }
-
-            // does the river flow movements
-            // ignores a new pos if 
-            /*
-                not in valid boaard pos or is gonna enter opps score area or is already in my score area dont move
-            */
-            for (auto const& [dx, dy] : dirs) {
-                int nx = x + dx, ny = y + dy;
-
-
-                // MANUAL CHANGE 1
-
-                if (!is_inside_board(nx, ny) || present_in_scoring(nx, ny, current_opponent_side, score_cols) || present_in_scoring(nx, ny, pid, score_cols)) continue;
-                // if (!is_inside_board(nx, ny) || present_in_scoring(nx, ny, current_opponent_side, score_cols)) continue;
-                
-                
-                
-                const auto& next_cell = board[ny][nx];
-                // if (next_cell.empty()) moves.push_back({"move", {x, y}, {nx, ny}, {}, ""});
-                if (get_key(next_cell, "side") == "river") find_river_moves(moves, board, x, y, nx, ny, pid, score_cols);
-            }
-
-            for (auto const& [dx, dy] : dirs) {
-                int nx = x + dx, ny = y + dy;
-
-
-                // MANUAL CHANGE 1
-
-                // if (!is_inside_board(nx, ny) || present_in_scoring(nx, ny, current_opponent_side, score_cols) || present_in_scoring(nx, ny, pid, score_cols)) continue;
-                if (!is_inside_board(nx, ny) || present_in_scoring(nx, ny, current_opponent_side, score_cols)) continue;
-                
-                
-                
-                const auto& next_cell = board[ny][nx];
-                if (next_cell.empty()) moves.push_back({"move", {x, y}, {nx, ny}, {}, ""});
-            }
-
-            /*
-            now for push
-            we wanna check the following for the guy we wanna push
-                if i am a stone:
-                    bro should not be a river
-                    bro should not be in opps scoring area
-                    bro in my scoring area cant help
-                    pushing area must be empty 
-                if a river
-
-            */
-            for (auto const& [dx, dy] : dirs) {
-                int nx = x + dx, ny = y + dy;
-                if (
-                    !is_inside_board(nx, ny) || 
-                    board[ny][nx].empty() 
-                ) {
-                        continue;
-                    }
-
-                if (piece_side == "stone") {
-                    int nx2 = x + 2*dx, ny2 = y + 2*dy;
-                    if (
-                        is_inside_board(nx2, ny2) && 
-                        board[ny2][nx2].empty() && 
-                        !(get_key(board[ny][nx], "owner")==current_opponent_side) && present_in_scoring(nx2, ny2, pid, score_cols) &&
-                        !(get_key(board[ny][nx], "owner")==current_opponent_side) && present_in_scoring(nx2, ny2, current_opponent_side, score_cols) &&
-                        !(get_key(board[ny][nx], "owner")==pid) && present_in_scoring(nx2, ny2, current_opponent_side, score_cols)
-                    ){
-                        moves.push_back({"push", {x, y}, {nx, ny}, {nx2, ny2}, ""});
-                    }
-                } else {
-                    if (get_key(board[ny][nx], "side") == "stone") {
-                        string orientation = get_key(cell, "orientation");
-                        int push_dx = (orientation == "horizontal") ? 1 : 0, push_dy = (orientation == "vertical") ? 1 : 0;
-                        for (int dir = -1; dir <= 1; dir += 2) {
-                            int cur_px = nx + push_dx * dir, cur_py = ny + push_dy * dir;
-                            while(is_inside_board(cur_px, cur_py)) {
-                                if ( (get_key(board[ny][nx], "owner")==current_opponent_side) && present_in_scoring(cur_px, cur_py, pid, score_cols)) break;
-                                if ( (get_key(board[ny][nx], "owner")==current_opponent_side) && present_in_scoring(cur_px, cur_py, current_opponent_side, score_cols)) break;
-                                if ( (get_key(board[ny][nx], "owner")==pid) && present_in_scoring(cur_px, cur_py, current_opponent_side, score_cols)) break;
-                                if(board[cur_py][cur_px].empty()) moves.push_back({"push", {x, y}, {nx, ny}, {cur_px, cur_py}, ""});
-                                else break;
-                                cur_px += push_dx * dir; cur_py += push_dy * dir;
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (piece_side == "stone") {
-                moves.push_back({"flip", {x, y}, {x, y}, {}, "horizontal"});
-                moves.push_back({"flip", {x, y}, {x, y}, {}, "vertical"});
-            } else {
-                moves.push_back({"flip", {x, y}, {x, y}, {}, ""});
-                moves.push_back({"rotate", {x, y}, {x, y}, {}, ""});
-            }
-        }
-    }
-    return moves;
-}
-
-BoardState StudentAgent::try_move(const BoardState& board, const Move& move, const vector<int>& score_cols) const {
-    auto next_board = board;
-    if (move.from.size() < 2) return next_board;
-    int from_x = move.from[0], from_y = move.from[1];
-    if (!is_inside_board(from_x, from_y) || next_board[from_y][from_x].empty()) return next_board;
-
-    string owner = get_key(next_board[from_y][from_x], "owner");
-
-    if (move.action == "move") {
-        if (move.to.size() < 2) return next_board;
-        int to_x = move.to[0], to_y = move.to[1];
-        if (!is_inside_board(to_x, to_y)) return next_board;
-
-        next_board[to_y][to_x] = next_board[from_y][from_x];
-        next_board[from_y][from_x].clear();
-
-        if (present_in_scoring(to_x, to_y, owner, score_cols)) {
-            next_board[to_y][to_x]["side"] = "stone";
-            next_board[to_y][to_x].erase("orientation");
-        }
-
-    } else if (move.action == "push") {
-        if (move.to.size() < 2 || move.pushed_to.size() < 2) return next_board;
-        int to_x = move.to[0], to_y = move.to[1];
-        int p_x = move.pushed_to[0], p_y = move.pushed_to[1];
-        if (!is_inside_board(to_x, to_y) || !is_inside_board(p_x, p_y)) return next_board;
-
-        next_board[p_y][p_x] = next_board[to_y][to_x];
-        string pushed_owner = get_key(next_board[p_y][p_x], "owner");
-
-        if (present_in_scoring(p_x, p_y, pushed_owner, score_cols)) {
-            next_board[p_y][p_x]["side"] = "stone";
-            next_board[p_y][p_x].erase("orientation");
-        }
-
-        next_board[to_y][to_x] = next_board[from_y][from_x];
-
-        if (present_in_scoring(to_x, to_y, owner, score_cols)) {
-            next_board[to_y][to_x]["side"] = "stone";
-            next_board[to_y][to_x].erase("orientation");
-        }
-
-        next_board[from_y][from_x].clear();
-
-    } else if (move.action == "flip") {
-        auto& piece_to_flip = next_board[from_y][from_x];
-        if (get_key(piece_to_flip, "side") == "stone") {
-            piece_to_flip["side"] = "river";
-            piece_to_flip["orientation"] = move.orientation;
-        } else {
-            piece_to_flip["side"] = "stone";
-            piece_to_flip.erase("orientation");
-        }
-
-    } else if (move.action == "rotate") {
-        auto& piece_to_rotate = next_board[from_y][from_x];
-        piece_to_rotate["orientation"] = (get_key(piece_to_rotate, "orientation") == "horizontal") ? "vertical" : "horizontal";
-    }
-
-    return next_board;
-}
-
-string StudentAgent::check_if_won(const BoardState& board, const vector<int>& score_cols) const {
-    if (count_pieces_in_score_area(board, "circle", score_cols) >= 4) {
-        // cout << "declare circle win" << endl;
-        return "circle";
-    }
-    if (count_pieces_in_score_area(board, "square", score_cols) >= 4) {
-        // cout << "declare square win" << endl;
-        return "square";
-    }
-    return "";
-}
 
 Node* StudentAgent::mcts_select_init_node(Node* root) {
     // cout << "in select node " << endl;
